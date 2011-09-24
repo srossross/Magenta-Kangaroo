@@ -5,9 +5,9 @@ Created on Jul 21, 2011
 '''
 
 from PySide import QtGui
-from my_gl_example.cgl_plot_widget import CGLPlotWidget
-from my_gl_example.color_map import ColorMap
-from my_gl_example.image_plot import ImagePlot, Interp
+from maka.cgl_plot_widget import CGLPlotWidget
+from maka.color_map import ColorMap
+from maka.image_plot import ImagePlot, Interp
 from mydemo import bring_to_front
 from pyopencl.tools import get_gl_sharing_context_properties
 import PIL.Image

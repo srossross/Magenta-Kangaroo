@@ -7,9 +7,9 @@ from PySide import QtCore, QtGui, QtOpenGL
 import pyopencl as cl #@UnresolvedImport
 import numpy as np
 from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
-from my_gl_example.line_plot import LinePlot
-from my_gl_example.cgl_plot_widget import CGLPlotWidget
-from my_gl_example.cl_pipe import ComputationalPipe
+from maka.line_plot import LinePlot
+from maka.cgl_plot_widget import CGLPlotWidget
+from maka.cl_pipe import ComputationalPipe
 
 n_vertices = 10000
 
