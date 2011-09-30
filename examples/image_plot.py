@@ -5,11 +5,10 @@ Created on Jul 21, 2011
 '''
 
 from PySide import QtGui
-from maka.cgl_plot_widget import CGLPlotWidget
-from maka.color_map import ColorMap
-from maka.image_plot import ImagePlot, Interp
-from mydemo import bring_to_front
-from pyopencl.tools import get_gl_sharing_context_properties
+from maka.canvas import MakaCanvasWidget
+from maka.image.color_map import ColorMap
+from maka.image.implot import ImagePlot, Interp
+from maka.util import bring_to_front
 import PIL.Image
 import numpy as np
 import pyopencl as cl
@@ -31,11 +30,10 @@ def main(argv):
 
     app = QtGui.QApplication(sys.argv)
 
-    widget = CGLPlotWidget(aspect=1)
+    widget = MakaCanvasWidget(aspect=1)
 
-    gl_context = widget.context()
-    gl_context.makeCurrent()
-
+    gl_context = widget.gl_context
+    cl_context = widget.cl_context
 
     data = np.array(image[:, :, :3].sum(-1), dtype=np.float32)
     shape = list(data.shape)
@@ -44,8 +42,6 @@ def main(argv):
     plat, = cl.get_platforms()
     ati, intel = plat.get_devices()
     print intel
-
-    cl_context = cl.Context(devices=[intel])
 
     implot = ImagePlot(widget.context(), cl_context, shape, share=False, interp=Interp.NEAREST)
 

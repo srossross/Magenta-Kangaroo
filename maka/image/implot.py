@@ -5,9 +5,9 @@ Created on Jul 23, 2011
 '''
 from PySide import QtCore
 from OpenGL import GL
-import pyopencl as cl
+import pyopencl as cl #@UnresolvedImport
 import numpy as np
-from my_gl_example.util import gl_begin, gl_matrix
+from maka.util import gl_begin
 
 class Texture2D(object):
     def __init__(self, cl_ctx, texture, shape, hostbuf=None, share=True):

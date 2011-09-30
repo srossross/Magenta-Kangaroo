@@ -35,3 +35,16 @@ def gl_matrix():
     GL.glPushMatrix()
     yield
     GL.glPopMatrix()
+    
+    
+
+def bring_to_front():
+    try:
+        from appscript import Application
+        Application('Python').activate()
+    except ImportError:
+        from subprocess import Popen
+        import sys, os
+        if sys.platform == 'darwin' and os.path.exists('/usr/bin/osascript'):
+            Popen('/usr/bin/osascript -e \'tell application "Python"\nactivate\nend tell\'', shell=True)
+    return

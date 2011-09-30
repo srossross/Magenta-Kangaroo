@@ -5,7 +5,7 @@ Created on Jul 24, 2011
 '''
 
 import pyopencl as cl #@UnresolvedImport
-from my_gl_example.cl_pipe import ComputationalPipe
+from maka.cl_pipe import ComputationalPipe
 import numpy as np
 
 class ColorMap(ComputationalPipe):

@@ -130,9 +130,9 @@ if __name__ == '__main__':
     app = QtGui.QApplication(sys.argv)
 
     if not QtOpenGL.QGLFormat.hasOpenGL():
-        QMessageBox.information(0, "OpenGL pbuffers",
+        QtGui.QMessageBox.information(0, "OpenGL pbuffers",
                                 "This system does not support OpenGL.",
-                                QMessageBox.Ok)
+                                QtGui.QMessageBox.Ok)
         sys.exit(1)
 
     f = QtOpenGL.QGLFormat.defaultFormat()

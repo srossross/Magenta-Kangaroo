@@ -9,15 +9,15 @@ from OpenGL import GL
 from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
 import pyopencl as cl #@UnresolvedImport
 from contextlib import contextmanager
-from my_gl_example.util import acquire_gl_objects, client_state
-
+from maka.util import acquire_gl_objects, client_state
 
 
 class LinePlot(QtCore.QObject):
-
-    def __init__(self, gl_context, cl_context, size, scale=None, color=(0, 0, 0)):
+    '''
+    A basic line plot. 
+    '''
+    def __init__(self, gl_context, cl_context, size, color=(0, 0, 0)):
         super(LinePlot, self).__init__()
-        self.scale = scale
         self._size = size
         self.color = color
 
@@ -70,14 +70,27 @@ class LinePlot(QtCore.QObject):
         return self.queue
 
     def draw(self):
-        with client_state(GL.GL_VERTEX_ARRAY):
-            with self.vtx_array:
-                GL.glColor(*self.color)
-                GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
+        with client_state(GL.GL_VERTEX_ARRAY), self.vtx_array:
+            GL.glColor(*self.color)
+            GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
 
 
 class VertexArray(object):
-
+    '''
+    Wrapper around an openGL VBO. 
+    
+    :param ctx: openCL context 
+    :param vbo: openGL vbo id
+     
+    use::
+        
+        vbo = VertexArray(ctx, )
+        
+        with vbo:
+            ...
+        
+            
+    '''
     def __init__(self, ctx, vbo):
         self.vbo = vbo
         self.ctx = ctx

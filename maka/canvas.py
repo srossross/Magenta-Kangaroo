@@ -6,8 +6,10 @@ Created on Jul 21, 2011
 
 from PySide import QtCore, QtOpenGL
 from OpenGL import GL
+import pyopencl as cl #@UnresolvedImport
+from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
 
-class CGLPlotWidget(QtOpenGL.QGLWidget):
+class MakaCanvasWidget(QtOpenGL.QGLWidget):
 
     def __init__(self, parent=None, aspect= -1):
         QtOpenGL.QGLWidget.__init__(self, QtOpenGL.QGLFormat(QtOpenGL.QGL.SampleBuffers), parent)
@@ -16,9 +18,11 @@ class CGLPlotWidget(QtOpenGL.QGLWidget):
 
         self.aspect = aspect
         self.plots = []
+        self._cl_context = None
 
     def add_plot(self, plot):
 
+        plot.process()
         plot.changed.connect(self.reqest_redraw)
         self.plots.append(plot)
 
@@ -32,7 +36,13 @@ class CGLPlotWidget(QtOpenGL.QGLWidget):
 
     @property
     def cl_context(self):
-        return self.ctx
+        if self._cl_context is None:
+            gl_context = self.context()
+            gl_context.makeCurrent()
+            self._cl_context = cl.Context(properties=get_gl_sharing_context_properties(), devices=[])
+            
+        return self._cl_context
+
 
     def initializeGL(self):
 
