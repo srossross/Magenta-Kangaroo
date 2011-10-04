@@ -11,7 +11,7 @@ from maka.canvas import MakaCanvasWidget
 from maka.cl_pipe import ComputationalPipe
 from maka.util import bring_to_front
 
-n_vertices = 10000
+n_vertices = 100
 
 src = """
 
@@ -42,7 +42,6 @@ if __name__ == '__main__':
     cl_context = canvas.cl_context
 
     plot1 = LinePlot(gl_context, cl_context, n_vertices, color=(1, 0, 0))
-
     plot2 = LinePlot(gl_context, cl_context, n_vertices, color=(0, .8, .2))
 
 
@@ -80,3 +79,5 @@ if __name__ == '__main__':
 
     bring_to_front()
     sys.exit(app.exec_())
+
+        

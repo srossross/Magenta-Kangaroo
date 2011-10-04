@@ -6,8 +6,10 @@ Created on Jul 21, 2011
 
 from PySide import QtCore, QtOpenGL
 from OpenGL import GL
+from OpenGL import GLU
 import pyopencl as cl #@UnresolvedImport
 from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
+from PySide.QtCore import Qt
 
 class MakaCanvasWidget(QtOpenGL.QGLWidget):
 
@@ -19,7 +21,12 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         self.aspect = aspect
         self.plots = []
         self._cl_context = None
-
+    
+        self.setFocusPolicy(Qt.ClickFocus)
+        
+        self.x_offset = 0
+        self.y_offset = 0
+        
     def add_plot(self, plot):
 
         plot.process()
@@ -43,12 +50,12 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             
         return self._cl_context
 
-
     def initializeGL(self):
 
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
         GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glLoadIdentity()
         GL.glClearColor(1.0, 1.0, 1.0, 1.0)
 
     def resizeGL(self, w, h):
@@ -61,7 +68,15 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             GL.glViewport(0, (h - w / aspect) / 2, w, w / aspect)
 
     def paintGL(self):
-
+        
+        GL.glMatrixMode(GL.GL_PROJECTION)
+        GL.glLoadIdentity()
+        GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glLoadIdentity()
+        GL.glClearColor(1.0, 1.0, 1.0, 1.0)
+        
+        GL.glTranslate(self.x_offset, self.y_offset, 0)
+        
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 
         qs = [plot.queue for plot in self.plots]
@@ -71,3 +86,35 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
 
         for plot in self.plots:
             plot.draw()
+    
+    def keyPressEvent(self, event):
+
+        if event.key() == Qt.Key_Left:
+            self.x_offset -= .01
+        elif event.key() == Qt.Key_Right:
+            self.x_offset += .01
+        elif event.key() == Qt.Key_Up:
+            self.y_offset += .01
+        elif event.key() == Qt.Key_Down:
+            self.y_offset -= .01
+            
+        self.updateGL()
+        
+    def mousePressEvent(self, event):
+        
+        self._orig_x, self._orig_y, _ = GLU.gluUnProject(event.pos().x(), event.pos().y(), 0)
+        print "self._orig_y", self._orig_y
+        
+    def mouseMoveEvent(self, event):
+        x, y, z = GLU.gluUnProject(event.pos().x(), event.pos().y(), 0)
+        
+        delta_x = x - self._orig_x
+        self.x_offset += delta_x
+
+        delta_y = y - self._orig_y
+        self.y_offset += delta_y
+        print "y_offset = %10.7f delta_y = %10.7f orig = %10.7f  new = %10.7f" % (self.y_offset, delta_y, self._orig_y, y)
+        
+        self.updateGL()
+        
+    
