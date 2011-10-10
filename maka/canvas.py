@@ -4,7 +4,7 @@ Created on Jul 21, 2011
 @author: sean
 '''
 
-from PySide import QtCore, QtOpenGL
+from PySide import QtCore, QtOpenGL, QtGui
 from OpenGL import GL
 from OpenGL import GLU
 import pyopencl as cl #@UnresolvedImport
@@ -26,6 +26,22 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         
         self.x_offset = 0
         self.y_offset = 0
+        
+        self.setMouseTracking(True)
+        
+        self._mouse_down = False
+        
+        print "add buttons"
+        self._layout = QtGui.QVBoxLayout(self)
+        
+        self.b1 = QtGui.QPushButton("Button1")
+        self._layout.addWidget(self.b1)
+        self.b2 = QtGui.QPushButton("Button2")
+        self._layout.addWidget(self.b2)
+        self.b3 = QtGui.QPushButton("Button3")
+        self._layout.addWidget(self.b3)
+        
+        self.setLayout(self._layout)
         
     def add_plot(self, plot):
 
@@ -98,14 +114,34 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         elif event.key() == Qt.Key_Down:
             self.y_offset -= .01
             
+        elif event.key() == Qt.Key_F:
+            print "F pressed"
+            if self.isFullScreen():
+                print "showNormal"
+                self.showNormal()
+            else:
+                print "showFullScreen"
+                self.showFullScreen()
+        else:
+            print event.text() , "pressed"
         self.updateGL()
         
     def mousePressEvent(self, event):
         
         self._orig_x, self._orig_y, _ = GLU.gluUnProject(event.pos().x(), event.pos().y(), 0)
+        
+        self._mouse_down = True
         print "self._orig_y", self._orig_y
         
+    def mouseReleaseEvent(self, event):
+        self._mouse_down = False
+        
     def mouseMoveEvent(self, event):
+        
+        if not self._mouse_down:
+            print "moving", event.pos()
+            return
+        
         x, y, z = GLU.gluUnProject(event.pos().x(), event.pos().y(), 0)
         
         delta_x = x - self._orig_x
@@ -117,4 +153,4 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         
         self.updateGL()
         
-    
+        
