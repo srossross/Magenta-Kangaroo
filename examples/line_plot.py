@@ -9,7 +9,7 @@ import numpy as np
 from maka.plot.line import LinePlot
 from maka.canvas import MakaCanvasWidget
 from maka.cl_pipe import ComputationalPipe
-from maka.util import bring_to_front
+from maka.util import bring_to_front, execute
 
 n_vertices = 100
 
@@ -41,10 +41,9 @@ if __name__ == '__main__':
     gl_context = canvas.gl_context
     cl_context = canvas.cl_context
 
-    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=(1, 0, 0))
-    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=(0, .8, .2))
-
-
+    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=(1, 0, 0), name="Plot 1")
+    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=(0, .8, .2), name="Plot 2")
+    
     generate_sin = Program(cl_context, src).build().generate_sin
 
     pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin, plot1.vtx_array.cl_buffer, np.float32(1.1))
@@ -78,6 +77,8 @@ if __name__ == '__main__':
     widget.show()
 
     bring_to_front()
-    sys.exit(app.exec_())
+    
+    execute(app, epic_fail=True)
+#    sys.exit(app.exec_())
 
         

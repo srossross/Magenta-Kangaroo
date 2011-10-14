@@ -6,6 +6,7 @@ Created on Jul 21, 2011
 from contextlib import contextmanager
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
+import sys
 
 @contextmanager
 def client_state(state):
@@ -48,3 +49,57 @@ def bring_to_front():
         if sys.platform == 'darwin' and os.path.exists('/usr/bin/osascript'):
             Popen('/usr/bin/osascript -e \'tell application "Python"\nactivate\nend tell\'', shell=True)
     return
+
+
+old_excepthook = None 
+
+execption_type = None
+execption_value = None
+execption_traceback = None
+
+execption_application = None
+
+def new_excepthook(type, value, traceback):
+    
+    global execption_type, execption_value, execption_traceback
+    execption_type, execption_value, execption_traceback = type, value, traceback
+    
+    if execption_application is not None:
+        print "Exception Occurred: Exiting application"
+        execption_application.exit(1)
+    else:
+        old_excepthook(type, value, traceback)
+    
+def execute(app, *args, **kwargs):
+    
+    epic_fail = kwargs.pop('epic_fail', False)
+    
+    if epic_fail:
+        debug_execute(app, *args, **kwargs)
+        return 0
+    else:
+        return app.exec_(*args, **kwargs)
+        
+def debug_execute(app, *args, **kwargs):
+    
+    global old_excepthook, execption_application
+    
+    execption_application = app
+    
+    old_excepthook = sys.excepthook
+     
+    sys.excepthook = new_excepthook
+    
+    try:
+        result = app.exec_(*args, **kwargs)
+    except:
+        sys.excepthook = old_excepthook
+        raise 
+    
+    sys.excepthook = old_excepthook
+    
+    print "result", result
+    if result:
+        raise execption_type, execption_value, execption_traceback
+
+

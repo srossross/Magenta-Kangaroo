@@ -5,6 +5,7 @@ Created on Jul 21, 2011
 '''
 
 from PySide import QtCore
+from PySide.QtGui import QAction
 from OpenGL import GL
 from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
 import pyopencl as cl #@UnresolvedImport
@@ -16,11 +17,12 @@ class LinePlot(QtCore.QObject):
     '''
     A basic line plot. 
     '''
-    def __init__(self, gl_context, cl_context, size, color=(0, 0, 0)):
+    def __init__(self, gl_context, cl_context, size, color=(0, 0, 0), name=None):
         super(LinePlot, self).__init__()
         self._size = size
         self.color = color
 
+        if name: self.setObjectName(name)
 
         self.gl_context = gl_context
         self.cl_context = cl_context
@@ -35,7 +37,35 @@ class LinePlot(QtCore.QObject):
         self.queue = cl.CommandQueue(self.cl_context)
 
         self._pipe_segments = []
-
+        
+        self._state = "normal"
+        
+        self._actions = {'show':QAction("Show", self, checkable=True, checked=True),
+                         'edit':QAction("Edit Plot", self),
+                        }
+        
+    @property
+    def visible(self):
+        return self._actions['show'].isChecked()
+    
+    @visible.setter
+    def visible(self, value):
+        self._actions['show'].setChecked(bool(value))
+        
+        
+    @property
+    def state(self):
+        return self._state
+    
+    state_changed = QtCore.Signal(str)
+    
+    @state.setter
+    def state(self, value):
+        if self._state != value:
+            self.state_changed.emit(value)
+        self._state = value
+        
+    
     def add_pipe_segment(self, segment):
         self._pipe_segments.append(segment)
         segment.changed.connect(self.segment_changed)
@@ -70,11 +100,34 @@ class LinePlot(QtCore.QObject):
         return self.queue
 
     def draw(self):
-        with client_state(GL.GL_VERTEX_ARRAY), self.vtx_array:
-            GL.glColor(*self.color)
-            GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
+        if self.visible:
+            with client_state(GL.GL_VERTEX_ARRAY), self.vtx_array:
+                
+                GL.glEnable(GL.GL_BLEND)
+                GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
 
+                GL.glEnable(GL.GL_LINE_SMOOTH)
+                GL.glDisable(GL.GL_DEPTH_TEST)
 
+                GL.glColor(*self.color)
+                
+                line_width = 1 if self.state == 'normal' else 2
+                GL.glLineWidth(line_width)
+                GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
+            
+    def over(self, value):
+        if self._state == value:
+            return False
+        
+        self.state = 'hover' if value else 'normal'
+        
+        return True
+        
+    @property
+    def actions(self):
+        return self._actions.values()
+    
+        
 class VertexArray(object):
     '''
     Wrapper around an openGL VBO. 
