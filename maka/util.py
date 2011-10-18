@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
 import sys
+from PySide import QtCore, QtGui
 
 @contextmanager
 def client_state(state):
@@ -27,17 +28,47 @@ def gl_context_mgr(ctx):
 
 @contextmanager
 def gl_begin(item):
-    GL.glBegin(GL.GL_QUADS)
+    GL.glBegin(item)
     yield
     GL.glEnd()
+
+@contextmanager
+def gl_enable(item):
+    leave_enabled = GL.glIsEnabled(item)
+    
+    GL.glEnable(item)
+    
+    yield
+    
+    if not leave_enabled:
+        GL.glDisable(item)
+
+@contextmanager
+def gl_disable(item):
+    re_enable = GL.glIsEnabled(item)
+    
+    GL.glDisable(item)
+    
+    yield
+    
+    if re_enable:
+        GL.glEnable(item)
 
 @contextmanager
 def gl_matrix():
     GL.glPushMatrix()
     yield
     GL.glPopMatrix()
+
+@contextmanager
+def matrix(mat_type):
+    GL.glMatrixMode(mat_type)
+    GL.glPushMatrix()
+    yield
+    GL.glMatrixMode(mat_type)
+    GL.glPopMatrix()
     
-    
+
 
 def bring_to_front():
     try:
@@ -103,3 +134,17 @@ def debug_execute(app, *args, **kwargs):
         raise execption_type, execption_value, execption_traceback
 
 
+class SAction(QtGui.QAction):
+    def __init__(self, name, widget, data=None):
+        QtGui.QAction.__init__(self, name, widget)
+        self.data = data
+        
+        self.triggered.connect(self._triggered)
+        
+    
+    @QtCore.Slot(bool)
+    def _triggered(self, checked=False):
+        self.triggered_data.emit(checked, self.data)
+        
+    triggered_data = QtCore.Signal(bool, object)
+        

@@ -4,229 +4,19 @@ Created on Jul 21, 2011
 @author: sean
 '''
 
+from OpenGL import GL, GLU
+from PIL.Image import fromarray #@UnresolvedImport
 from PySide import QtCore, QtOpenGL, QtGui
-from OpenGL import GL
-from OpenGL import GLU
-import pyopencl as cl #@UnresolvedImport
-from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
 from PySide.QtCore import Qt
-
-from contextlib import contextmanager
-import time
-from maka.util import gl_begin
 from PySide.QtGui import QMenu, QAction
+from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
+from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
+import numpy as np
+import os
+import pyopencl as cl #@UnresolvedImport
+from maka.tool import PanTool, SelectionTool, ZoomTool
 
 SIZE = 100
-
-
-@contextmanager
-def matrix(mat_type):
-    GL.glMatrixMode(mat_type)
-    GL.glPushMatrix()
-    yield
-    GL.glMatrixMode(mat_type)
-    GL.glPopMatrix()
-    
-    
-class Tool(QtCore.QObject):
-    
-    def __init__(self, key):
-        super(QtCore.QObject, self).__init__()
-        self.key = key
-        
-    def _mousePressEvent(self, qgl_widget, event):
-        pass
-
-    def _mouseMoveEvent(self, qgl_widget, event):
-        pass
-
-    def _mouseReleaseEvent(self, qgl_widget, event):
-        pass
-    
-    def _paintGL(self, qgl_widget):
-        pass
-    
-class PanTool(Tool):
-    
-    def _mousePressEvent(self, qgl_widget, event):
-        
-        if (event.buttons() & Qt.LeftButton):
-            self.orig = qgl_widget.mapToGL(event.pos())
-
-    def _mouseMoveEvent(self, qgl_widget, event):
-        
-        if (event.buttons() & Qt.LeftButton):
-            new = qgl_widget.mapToGL(event.pos())
-            
-            delta_x = new.x() - self.orig.x()
-            delta_y = new.y() - self.orig.y()
-            
-            qgl_widget.bounds.translate(-delta_x, -delta_y) 
-            
-            qgl_widget.updateGL()
-            
-
-class ZoomTool(Tool):
-    start_point = QtCore.QPointF(0, 0)
-    current_point = QtCore.QPointF(0, 0)
-    
-    _paint = False
-    
-    def _mousePressEvent(self, qgl_widget, event):
-        if event.modifiers() & Qt.ControlModifier:
-            return
-        
-        self._paint = True
-        self.start_point = qgl_widget.mapToGL(event.pos())
-    
-    def modify(self, qgl_widget, start, curr):
-        
-        bounds = qgl_widget.bounds
-        aspect = abs(bounds.width() / bounds.height())
-        
-        dx = curr.x() - start.x()
-        dy = curr.y() - start.y()
-        
-        if abs(dx) < abs(dy * aspect):
-            sign = -1 if dy < 0 else 1
-            curr.setY(start.y() + sign * abs(dx) / aspect)
-        else:
-            sign = -1 if (dx) < 0 else 1
-            curr.setX(start.x() + sign * abs(dy) / aspect)
-            
-    def _mouseMoveEvent(self, qgl_widget, event):
-        
-        start = self.start_point
-        curr = qgl_widget.mapToGL(event.pos())
-        
-        if event.modifiers() & Qt.ShiftModifier:
-            self.modify(qgl_widget, start, curr)
-                
-        self.current_point = curr    
-        qgl_widget.update()
-    
-    def _mouseReleaseEvent(self, qgl_widget, event):
-        self._paint = False
-        
-        start = self.start_point
-        end = qgl_widget.mapToGL(event.pos())
-        
-        if event.modifiers() & Qt.ControlModifier:
-            x, y = qgl_widget.bounds.x(), qgl_widget.bounds.y()
-            width, height = qgl_widget.bounds.width(), qgl_widget.bounds.height()
-                                
-            rect = QtCore.QRectF(2 * x - end.x(), 2 * y - end.y(), width * 2, height * 2)
-        else:
-            if event.modifiers() & Qt.ShiftModifier:
-                self.modify(qgl_widget, start, end)
-    
-            x = start.x()
-            y = start.y()
-            width = end.x() - start.x()
-            height = end.y() - start.y()
-            
-            if (width * qgl_widget.bounds.width()) < 0:
-                width *= -1 
-                x = end.x()
-            if (height * qgl_widget.bounds.height()) < 0:
-                height *= -1 
-                y = end.y()
-            
-            if width == 0 or height == 0:
-                return
-            
-            rect = QtCore.QRectF(x, y, width, height)
-
-        self.animation = QtCore.QPropertyAnimation(qgl_widget, "bounds")
-        
-        self.animation.setDuration(1000);
-        self.animation.setStartValue(qgl_widget.bounds)
-        self.animation.setEndValue(rect)
-        
-        self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
-        self.animation.start()
-
-        
-        qgl_widget.update()
-
-    def _paintGL(self, qgl_widget):
-        
-        if not self._paint:
-            return 
-        
-        with matrix(GL.GL_PROJECTION):
-            rect = qgl_widget.bounds
-            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
-
-            with gl_begin(GL.GL_LINES):
-                pass
-#
-#                    GL.glVertex2f(self.start_point.x(), self.start_point.y());
-#                    GL.glVertex2f(self.start_point.x(), self.current_point.y());
-#                    GL.glVertex2f(self.current_point.x(), self.current_point.y());
-#                    GL.glVertex2f(self.current_point.x(), self.start_point.y());
-#                    GL.glVertex2f(self.start_point.x(), self.start_point.y());
-#                    
-            with gl_begin(GL.GL_QUADS):
-#                    GL.glColor(0, 0, 0, 255)
-#                    GL.glLineWidth(2)
-                GL.glColor4ub(34, 140, 150, 140);
-                GL.glVertex2f(self.start_point.x(), self.start_point.y());
-                GL.glVertex2f(self.start_point.x(), self.current_point.y());
-                GL.glVertex2f(self.current_point.x(), self.current_point.y());
-                GL.glVertex2f(self.current_point.x(), self.start_point.y());
-                GL.glVertex2f(self.start_point.x(), self.start_point.y());
-
-    
-
-class SelectionTool(Tool):
-    def _mouseMoveEvent(self, qgl_widget, event):
-        with matrix(GL.GL_MODELVIEW):
-            rect = qgl_widget.bounds
-            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
-            
-            with matrix(GL.GL_PROJECTION):
-                viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
-                GLU.gluPickMatrix(event.pos().x(), viewport[3] - event.pos().y(), 4, 4, viewport)
-            
-                GL.glSelectBuffer(SIZE)
-                GL.glRenderMode(GL.GL_SELECT)
-        
-                GL.glInitNames();
-                
-                name = 0
-    
-                GL.glPushName(name);
-        
-                pmap = {}
-                
-                for plot in qgl_widget.plots:
-                    name += 1
-                    GL.glPopName()
-                    GL.glPushName(name)
-                    plot.draw()
-                    pmap[name] = plot
-                    
-                GL.glPopName()
-                GL.glFlush()
-                
-                hits = GL.glRenderMode(GL.GL_RENDER)
-                
-                require_update = False
-                for _, _, names in hits:
-                    for name in names:
-                        plot = pmap.pop(name)
-                        if plot:
-                            require_update |= bool(plot.over(True))
-                            
-                for plot in pmap.values():
-                        if plot:
-                            require_update |= bool(plot.over(False))
-                        
-        if require_update:
-            qgl_widget.updateGL()
-            
-            
 class MakaCanvasWidget(QtOpenGL.QGLWidget):
 
     def _get_xoff(self):
@@ -246,20 +36,34 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
     offset = QtCore.Property(QtCore.QPointF, _get_xoff, _set_xoff) 
     bounds = QtCore.Property(QtCore.QRectF, _get_bounds, _set_bounds) 
     
+    def data_space(self):
+        rect = self.bounds
+        GLU.gluOrtho2D(rect.left(), rect.right(), rect.top(), rect.bottom())
+        
     def mapToGL(self, point):
         with matrix(GL.GL_MODELVIEW):
-            rect = self.bounds
-            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
+            self.data_space()
             
             viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
-            x, y, _ = GLU.gluUnProject(point.x(), viewport[3] - point.y(), -1)
-#            x, y, _ = GLU.gluUnProject(point.x(), point.y(), -1)
+            
+            print viewport, point.x()
+            x, y, _ = GLU.gluUnProject(point.x() , viewport[3] - (point.y() - 2 * viewport[1]), -1)
+
         return QtCore.QPointF(x, y)
 
-    def __init__(self, parent=None, aspect= -1):
+    def mapToScreen(self, point):
+        with matrix(GL.GL_MODELVIEW):
+            self.data_space()
+            
+            viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
+            x, y, _ = GLU.gluProject(point.x(), point.y(), -1)
+        return QtCore.QPointF(x, viewport[3] - y + 2 * viewport[1])
+
+    def __init__(self, parent=None, aspect= -1, name='Magenta Canvas'):
         
         QtOpenGL.QGLWidget.__init__(self, QtOpenGL.QGLFormat(QtOpenGL.QGL.SampleBuffers), parent)
-
+        
+        self.setObjectName(name)
         self.setWindowTitle("Sample Buffers")
 
         self.aspect = aspect
@@ -283,37 +87,90 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         self.current_tool = 'pan'
         
         self.save_act = save_act = QAction("Save As...", self)
-        
         save_act.triggered.connect(self.save_as)
+        
+        self.drop_marker_act = drop_marker_act = QAction("Drop Marker", self)
+        self.show_markers_act = show_markers_act = QAction("Visible", self)
+        show_markers_act.setCheckable(True)
+        show_markers_act.setChecked(True)
+        
+        drop_marker_act.triggered.connect(self.drop_marker)
+        
         self._save = False
 
+        self.drop_pin = drop_pin = QtGui.QPixmap("resources/images/drop-pin-large2.png")
+        
+        self.markers = {"Center" : QtCore.QPointF(0, 0)}
+        
+#        self.setToolTip("This is a tooltip")
+        
+#        
+#        self.marker_tooltip_timer = QtCore.QTimer()
+#        self.marker_tooltip_timer.setSingleShot(True)
+#        self.marker_tooltip_timer.setInterval(1000)
+#        
+#        self.marker_tooltip_timer.
+        
+    @property
+    def markers_visible(self):
+        return self.show_markers_act.isChecked()
+    
+    @QtCore.Slot(bool)
+    def remove_marker(self, checked, marker):
+        print "remove_marker"
+        
+    @QtCore.Slot(bool)
+    def drop_marker(self, checked=False):
+        print "drop_marker"
+        
+        point = self.mapToGL(self.drop_here)
+        
+        global_pos = self.mapToGlobal(self.drop_here)
+        dialog = QtGui.QDialog()
+        dialog.setWindowOpacity(.8)
+        dialog.move(global_pos)
+        layout = QtGui.QVBoxLayout()
+        dialog.setLayout(layout)
+        text = QtGui.QLineEdit(dialog)
+        text.setText("Marker %i" % (len(self.markers),))
+        layout.addWidget(text)
+        bbox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel, Qt.Horizontal, dialog)
+        layout.addWidget(bbox)
+        dialog.setModal(True)
+        dialog.setWindowTitle("Drop Marker")
+        
+        bbox.accepted.connect(dialog.accept)
+        bbox.rejected.connect(dialog.reject)
+        
+        result = dialog.exec_()
+        
+        if result == QtGui.QDialog.Accepted:
+            self.markers[text.text()] = point
+            self.update()
+        
     @QtCore.Slot(bool)
     def save_as(self, checked=False):
         
         self.makeCurrent()
         
-        print self.size().width(), self.size().height()
-        pixmap = GL.glReadPixels(0, 0, self.size().width(), self.size().height(), GL.GL_BGRA, GL.GL_UNSIGNED_BYTE)
+        orig_size = self.size()
         
-        import numpy as np
+        pixmap = GL.glReadPixels(0, 0, 1000, 1000, GL.GL_BGRA, GL.GL_UNSIGNED_BYTE)
+        
         a = np.frombuffer(pixmap, dtype=np.uint8)
-        b = a.reshape([self.size().height(), self.size().width(), 4])
+        b = a.reshape([1000, 1000, 4])
         
-        import os
         path = os.path.expanduser('~')
         fileName = QtGui.QFileDialog.getSaveFileName(self, "Save Image", path, "Image Files (*.png *.jpg *.bmp, *.tiff)")
-#        
-        from PIL.Image import fromarray
         
         image = fromarray(b, mode='RGBA')
         
-        image.save(open(fileName[0], 'w'), )
+        image.save(open(fileName[0], 'w'),)
         
     @property
     def tool(self):
         return self.tools[self.current_tool]
         
-                
     def add_plot(self, plot):
 
         plot.process()
@@ -338,14 +195,29 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         return self._cl_context
 
     def initializeGL(self):
-        print "initializeGL"
         GL.glEnable(GL.GL_MULTISAMPLE)
         GL.glEnable(GL.GL_LINE_SMOOTH)
         GL.glDisable(GL.GL_DEPTH_TEST)
         
+        self.drop_pin_tex = self.bindTexture(self.drop_pin.toImage())
         
+    def viewport_offset(self, size=None):
+        if size is None:
+            size = self.size()
+            
+        w = size.width()
+        h = size.height()
+        
+        aspect = self.aspect
+        
+        if aspect < 0:
+            return QtCore.QPoint(0, 0)
+        elif w > h * aspect:
+            return QtCore.QPoint((w - h * aspect) / 2, 0)
+        else:
+            return QtCore.QPoint(0, (h - w / aspect) / 2)
+            
     def resizeGL(self, w, h):
-        print "resizeGL"
         aspect = self.aspect
         if aspect < 0:
             GL.glViewport(0, 0, w, h)
@@ -361,39 +233,77 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         GL.glClearColor(1.0, 1.0, 1.0, 1.0)
         
     def paintGL(self):
-        print "paintGL"
-        if self._save == True:
-            import pdb;pdb.set_trace()
+
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+        
         qs = [plot.queue for plot in self.plots]
 
         for q in qs:
             q.finish()
         
         with matrix(GL.GL_PROJECTION):
-            rect = self.bounds
-            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
+            self.data_space()
         
             with matrix(GL.GL_MODELVIEW):
                 
-                GL.glClear(GL.GL_COLOR_BUFFER_BIT)
                 
                 for plot in self.plots:
                     plot.draw()
                 
+            self.draw_markers()
+            
         self.tool._paintGL(self)
+        
+    def draw_markers(self):
+        if not self.markers_visible:
+            return 
+        
+        _maxSize = GL.glGetFloatv(GL.GL_POINT_SIZE_MAX_ARB)
+        _minSize = GL.glGetFloatv(GL.GL_POINT_SIZE_MIN_ARB)
+        
+        
+        with gl_disable(GL.GL_DEPTH_TEST), gl_disable(GL.GL_LIGHTING), \
+             gl_enable(GL.GL_TEXTURE_2D), gl_enable(GL.GL_POINT_SPRITE), \
+             gl_enable(GL.GL_BLEND):
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_R:
+            GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
+
+            GL.glDepthMask(0)
+            
+            GL.glBindTexture(GL.GL_TEXTURE_2D, self.drop_pin_tex)
+    
+            GL.glTexEnvi(GL.GL_POINT_SPRITE, GL.GL_COORD_REPLACE, GL.GL_TRUE)
+            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_REPLACE)
+            GL.glPointParameteri(GL.GL_POINT_SPRITE_COORD_ORIGIN, GL.GL_LOWER_LEFT)
+            
+            GL.glPointSize(_maxSize)
+            
+            GL.glColor4f(1.0, 1.0, 1.0, 1.0)
+            
+            with gl_begin(GL.GL_POINTS):
+                for marker in self.markers.values():
+                    GL.glVertex3f(marker.x(), marker.y(), -1)
+    
+    def setBounds(self, rect, animate=False):
+        
+        if animate:
             self.animation = QtCore.QPropertyAnimation(self, "bounds")
             
-            self.animation.setDuration(500);
+            self.animation.setDuration(1000);
             self.animation.setStartValue(self.bounds)
-            self.animation.setEndValue(self._initial_bounds)
+            self.animation.setEndValue(rect)
             
             self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
             self.animation.start()
+        else:
+            self.bounds = rect
+        
+        self.update()
             
-            self.animation.finished.connect(self.waa)
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_R:
+            self.setBounds(self._initial_bounds, animate=True)
+            
         else:
             for tool_name, tool in self.tools.items():
                 if tool.key == event.key():
@@ -401,25 +311,94 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
                     self.current_tool = tool_name
             return
         
-        self.updateGL()
+    def event(self, event):
+        if event.type() == QtCore.QEvent.ToolTip:
+            return self.toolTipEvent(event)
+        else:
+            return QtOpenGL.QGLWidget.event(self, event)
+        
+    def markers_at(self, atpoint):
+        '''
+        :param point: point in screen space
+        '''
+        for name, marker in self.markers.items():
+            point = self.mapToScreen(marker)
+            if (point - atpoint).manhattanLength() < 64:
+                
+                yield name
     
-    @QtCore.Slot()
-    def waa(self):
-        print "finished"
+    def toolTipEvent(self, event):
+        
+        glob_point = event.globalPos()
+        
+        if self.markers_visible:
+            for name in self.markers_at(event.pos()):
+                space = QtCore.QPoint(32, 32) 
+                rect = QtCore.QRect(event.pos() - space, event.pos() + space)
+                QtGui.QToolTip.showText(glob_point, name, self, rect)
+                return True
+        
+        return False
     
     def mousePressEvent(self, event):
+        
         self.tool._mousePressEvent(self, event)
             
     def mouseReleaseEvent(self, event):
-        self.tool._mouseReleaseEvent(self, event)
         
+        self.tool._mouseReleaseEvent(self, event)
+    
     def mouseMoveEvent(self, event):
+        
         self.tool._mouseMoveEvent(self, event)
-                            
+        
+    def move_to_marker(self, checked, name):
+        
+        marker = self.markers[name]
+        
+        print "move_to_marker", checked, marker
+        
+        rect = QtCore.QRectF(self.bounds)
+        
+        x = marker.x() - self.bounds.width() / 2
+        y = marker.y() - self.bounds.height() / 2
+        rect.moveTo(x, y)
+        self.setBounds(rect, animate=True)
+        
     def contextMenuEvent(self, event):
         menu = QMenu()
         
         menu.addAction(self.save_act)
+        
+        self.drop_here = drop_here = event.pos()
+        
+        markers = QMenu("Marker")
+        menu.addMenu(markers)
+        markers.addAction(self.drop_marker_act)
+        
+        makers_under = list(self.markers_at(drop_here))
+        
+        if makers_under:
+            remove_marker_act = SAction("Remove %r" % makers_under[0], self, makers_under[0])
+            remove_marker_act.setEnabled(True)
+            remove_marker_act.triggered.connect(self.remove_marker)
+        else:
+            remove_marker_act = QAction("Remove Marker", self)
+            remove_marker_act.setEnabled(False)
+
+        markers.addAction(remove_marker_act)
+        
+        markers.addSeparator()
+        markers.addAction(self.show_markers_act)
+
+        go_to = QMenu("Go To")
+        markers.addMenu(go_to)
+        
+        for marker in self.markers.keys():
+            action = SAction(marker, self, data=marker)
+            action.triggered_data.connect(self.move_to_marker)
+            go_to.addAction(action)
+        
         for i, plot in enumerate(self.plots):
         
             menu.addSeparator()
@@ -429,10 +408,32 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             
             for action in plot.actions:
                 title.addAction(action)
+            for sub_menu in plot.menus:
+                title.addMenu(sub_menu)
 
         p = self.mapToGlobal(event.pos())
         menu.exec_(p)
         
         event.accept()
+        
         self.update()
+
+    def busy(self):
+        
+        GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glPushMatrix()
+        GL.glLoadIdentity()
+        GL.glMatrixMode(GL.GL_PROJECTION)
+        GL.glPushMatrix()
+        GL.glLoadIdentity()
+        GL.glColor4ub(139, 0, 139, 100)
+        GL.glBegin(GL.GL_QUADS)
+        GL.glVertex3i(-1, -1, -1)
+        GL.glVertex3i(1, -1, -1)
+        GL.glVertex3i(1, 1, -1)
+        GL.glVertex3i(-1, 1, -1)
+        GL.glEnd()
+        GL.glPopMatrix()
+        GL.glMatrixMode(GL.GL_MODELVIEW)
+        GL.glPopMatrix()
 

@@ -5,22 +5,21 @@ Created on Jul 21, 2011
 '''
 
 from PySide import QtCore
-from PySide.QtGui import QAction
+from PySide.QtGui import QAction, QMenu, QColor, QColorDialog
 from OpenGL import GL
 from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
 import pyopencl as cl #@UnresolvedImport
 from contextlib import contextmanager
-from maka.util import acquire_gl_objects, client_state
+from maka.util import acquire_gl_objects, client_state, SAction
 
 
 class LinePlot(QtCore.QObject):
     '''
     A basic line plot. 
     '''
-    def __init__(self, gl_context, cl_context, size, color=(0, 0, 0), name=None):
+    def __init__(self, gl_context, cl_context, size, color=QColor(0, 0, 0), name=None):
         super(LinePlot, self).__init__()
         self._size = size
-        self.color = color
 
         if name: self.setObjectName(name)
 
@@ -40,18 +39,63 @@ class LinePlot(QtCore.QObject):
         
         self._state = "normal"
         
-        self._actions = {'show':QAction("Show", self, checkable=True, checked=True),
+        self._actions = {'visible':QAction("Visible", self, checkable=True, checked=True),
                          'edit':QAction("Edit Plot", self),
                         }
         
+        color_menu = QMenu("Color")
+        
+        self._color_actions = [
+                               SAction("red", self, QColor(255, 0, 0)),
+                               SAction("green", self, QColor(0, 255, 0)),
+                               SAction("blue", self, QColor(0, 0, 255)),
+                               SAction("Other ...", self, None),
+                               ]
+        
+        self._menus = {'color': color_menu}
+        
+        for action in self._color_actions[:-1]:
+            color_menu.addAction(action)
+            action.setCheckable(True)
+            action.triggered_data.connect(self.change_color)
+        
+        color_menu.addSeparator() 
+        action = self._color_actions[-1]
+        color_menu.addAction(action)
+        action.setCheckable(True)
+        action.triggered_data.connect(self.change_color)
+            
+        self.change_color(color=color)
+        
+        
+    @QtCore.Slot(bool, object)
+    def change_color(self, checked=False, color=None):
+        
+        if color is None:
+            color = QColorDialog.getColor(QtCore.Qt.green)
+            print color
+        
+        have_color = False
+        for action in self._color_actions:
+            action.setChecked(False)
+            if action.data == color:
+                action.setChecked(True)
+                have_color = True
+                
+        if not have_color:
+            other = self._color_actions[-1]
+            other.setChecked(True)
+            
+        
+        self.color = color
+    
     @property
     def visible(self):
-        return self._actions['show'].isChecked()
+        return self._actions['visible'].isChecked()
     
     @visible.setter
     def visible(self, value):
-        self._actions['show'].setChecked(bool(value))
-        
+        self._actions['visible'].setChecked(bool(value))
         
     @property
     def state(self):
@@ -109,9 +153,9 @@ class LinePlot(QtCore.QObject):
                 GL.glEnable(GL.GL_LINE_SMOOTH)
                 GL.glDisable(GL.GL_DEPTH_TEST)
 
-                GL.glColor(*self.color)
+                GL.glColor(self.color.red(), self.color.green(), self.color.blue(), self.color.alpha())
                 
-                line_width = 1 if self.state == 'normal' else 2
+                line_width = 2 if self.state == 'normal' else 3.5
                 GL.glLineWidth(line_width)
                 GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
             
@@ -126,6 +170,10 @@ class LinePlot(QtCore.QObject):
     @property
     def actions(self):
         return self._actions.values()
+
+    @property
+    def menus(self):
+        return self._menus.values()
     
         
 class VertexArray(object):

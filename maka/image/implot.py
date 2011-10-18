@@ -7,7 +7,7 @@ from PySide import QtCore
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
 import numpy as np
-from maka.util import gl_begin
+from maka.util import gl_begin, gl_enable
 
 class Texture2D(object):
     def __init__(self, cl_ctx, texture, shape, hostbuf=None, share=True):
@@ -76,7 +76,7 @@ class ImagePlot(QtCore.QObject):
         GL.glEnable(GL.GL_TEXTURE_2D);
         GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
 
-        GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_REPLACE)
+        GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
 
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, interp)
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
@@ -96,12 +96,15 @@ class ImagePlot(QtCore.QObject):
 
     def draw(self):
 
-        GL.glColor4ub(255, 0, 0, 255);
+        GL.glColor4ub(255, 0, 0, 0);
+        
         
         with self.texture:
-            with gl_begin(GL.GL_QUADS):
-                GL.glTexCoord2f(0, 0); GL.glVertex2f(-1, 1);
-                GL.glTexCoord2f(1, 0); GL.glVertex2f(1, 1);
-                GL.glTexCoord2f(1, 1); GL.glVertex2f(1, -1);
-                GL.glTexCoord2f(0, 1); GL.glVertex2f(-1, -1);
+            with gl_enable(GL.GL_BLEND):
+                GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
+                with gl_begin(GL.GL_QUADS):
+                    GL.glTexCoord2f(0, 0); GL.glVertex2f(-1, 1);
+                    GL.glTexCoord2f(1, 0); GL.glVertex2f(1, 1);
+                    GL.glTexCoord2f(1, 1); GL.glVertex2f(1, -1);
+                    GL.glTexCoord2f(0, 1); GL.glVertex2f(-1, -1);
 

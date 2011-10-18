@@ -4,6 +4,7 @@
 
 import sys
 from PySide import QtCore, QtGui, QtOpenGL
+from PySide.QtGui import QColor
 from pyopencl import Program 
 import numpy as np
 from maka.plot.line import LinePlot
@@ -14,6 +15,20 @@ from maka.util import bring_to_front, execute
 n_vertices = 100
 
 src = """
+
+__kernel void generate_sin(__global float2* a, float scale)
+{
+    int id = get_global_id(0);
+    int n = get_global_size(0);
+    float r = (float)id / (float)n;
+    float x = r * 16.0f * 3.1415f;
+    
+    a[id].x = r * 2.0f - 1.0f;
+    a[id].y = (r * 2.0f - 1.0f) + native_sin(x) * scale;
+}
+"""
+
+src2 = """
 
 __kernel void generate_sin(__global float2* a, float scale)
 {
@@ -41,8 +56,8 @@ if __name__ == '__main__':
     gl_context = canvas.gl_context
     cl_context = canvas.cl_context
 
-    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=(1, 0, 0), name="Plot 1")
-    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=(0, .8, .2), name="Plot 2")
+    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(255, 0, 0), name="Plot 1")
+    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(0, 200, 50), name="Plot 2")
     
     generate_sin = Program(cl_context, src).build().generate_sin
 
@@ -79,6 +94,5 @@ if __name__ == '__main__':
     bring_to_front()
     
     execute(app, epic_fail=True)
-#    sys.exit(app.exec_())
-
+    
         

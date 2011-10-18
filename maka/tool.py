@@ -7,7 +7,7 @@ Created on Oct 15, 2011
 from OpenGL import GL, GLU
 from PySide import QtCore
 from PySide.QtCore import Qt
-from maka.util import gl_begin, matrix
+from maka.util import gl_begin, matrix, gl_enable, gl_disable
 
 
 SIZE = 100
@@ -57,7 +57,9 @@ class ZoomTool(Tool):
     _paint = False
     
     def _mousePressEvent(self, qgl_widget, event):
-        if event.modifiers() & Qt.ControlModifier:
+
+        if (not (event.buttons() & Qt.LeftButton)) or (event.modifiers() & Qt.ControlModifier):
+            self._paint = False
             return
         
         self._paint = True
@@ -80,13 +82,18 @@ class ZoomTool(Tool):
             
     def _mouseMoveEvent(self, qgl_widget, event):
         
-        start = self.start_point
-        curr = qgl_widget.mapToGL(event.pos())
+        if not (event.buttons() & Qt.LeftButton):
+            self._paint = False
+            return 
         
-        if event.modifiers() & Qt.ShiftModifier:
-            self.modify(qgl_widget, start, curr)
-                
-        self.current_point = curr    
+        if self._paint:
+            start = self.start_point
+            curr = qgl_widget.mapToGL(event.pos())
+            
+            if event.modifiers() & Qt.ShiftModifier:
+                self.modify(qgl_widget, start, curr)
+                    
+            self.current_point = curr    
         qgl_widget.update()
     
     def _mouseReleaseEvent(self, qgl_widget, event):
@@ -140,6 +147,7 @@ class ZoomTool(Tool):
         
         with matrix(GL.GL_PROJECTION):
             qgl_widget.data_space()
+            
 #            rect = qgl_widget.bounds
 #            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
 
@@ -152,16 +160,20 @@ class ZoomTool(Tool):
 #                    GL.glVertex2f(self.current_point.x(), self.start_point.y());
 #                    GL.glVertex2f(self.start_point.x(), self.start_point.y());
 #                    
-            with gl_begin(GL.GL_QUADS):
-#                GL.glColor(0, 0, 0, 255)
-#                    GL.glLineWidth(2)
-                GL.glColor4ub(139, 0, 139, 139)
-#                GL.glColor4ub(34, 140, 150, 140);
-                GL.glVertex2f(self.start_point.x(), self.start_point.y())
-                GL.glVertex2f(self.start_point.x(), self.current_point.y())
-                GL.glVertex2f(self.current_point.x(), self.current_point.y())
-                GL.glVertex2f(self.current_point.x(), self.start_point.y())
-                GL.glVertex2f(self.start_point.x(), self.start_point.y())
+            with gl_disable(GL.GL_BLEND), gl_disable(GL.GL_DEPTH_TEST):
+
+                GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
+#                GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
+#                GL.glBlendFunc(GL.GL_ONE, GL.GL_ONE)
+                GL.glDepthMask(0)
+    
+                with gl_begin(GL.GL_QUADS):
+                    GL.glColor4ub(139, 0, 139, 255)
+                    GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
+                    GL.glVertex3f(self.start_point.x(), self.current_point.y(), -1 )
+                    GL.glVertex3f(self.current_point.x(), self.current_point.y(), -1)
+                    GL.glVertex3f(self.current_point.x(), self.start_point.y(), -1)
+                    GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
 
     
 
