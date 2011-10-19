@@ -8,7 +8,7 @@ from PySide import QtGui
 from maka.canvas import MakaCanvasWidget
 from maka.image.color_map import ColorMap
 from maka.image.implot import ImagePlot, Interp
-from maka.util import bring_to_front
+from maka.util import bring_to_front, execute
 import PIL.Image
 import numpy as np
 import pyopencl as cl
@@ -43,7 +43,7 @@ def main(argv):
     ati, intel = plat.get_devices()
     print intel
 
-    implot = ImagePlot(widget.context(), cl_context, shape, share=False, interp=Interp.NEAREST)
+    implot = ImagePlot(widget.context(), cl_context, shape, name='Lena', share=False, interp=Interp.NEAREST)
 
     cl_data = cl.Buffer(cl_context, cl.mem_flags.READ_WRITE, data.nbytes)
 
@@ -53,7 +53,7 @@ def main(argv):
                                      cl_data, implot.texture.cl_image,
                                      shape, clim=(np.float32(data.min()), np.float32(data.max()))
                                      )
-
+    
     cl.enqueue_copy(implot.queue, cl_data, data)
 
     implot.queue.finish()
@@ -69,7 +69,8 @@ def main(argv):
 
     bring_to_front()
 
-    sys.exit(app.exec_())
+#    sys.exit(app.exec_())
+    execute(app, epic_fail=True)
 
 
 if __name__ == '__main__':

@@ -155,7 +155,8 @@ class LinePlot(QtCore.QObject):
 
                 GL.glColor(self.color.red(), self.color.green(), self.color.blue(), self.color.alpha())
                 
-                line_width = 2 if self.state == 'normal' else 3.5
+                line_width = 1 if self.state == 'normal' else 3.5
+                
                 GL.glLineWidth(line_width)
                 GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
             

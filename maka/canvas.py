@@ -46,7 +46,6 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             
             viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
             
-            print viewport, point.x()
             x, y, _ = GLU.gluUnProject(point.x() , viewport[3] - (point.y() - 2 * viewport[1]), -1)
 
         return QtCore.QPointF(x, y)
@@ -57,7 +56,11 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             
             viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
             x, y, _ = GLU.gluProject(point.x(), point.y(), -1)
-        return QtCore.QPointF(x, viewport[3] - y + 2 * viewport[1])
+            
+        screen_point = QtCore.QPoint(x, viewport[3] - (y - 2 * viewport[1]))
+        
+        print self.mapToGL(screen_point), point
+        return screen_point
 
     def __init__(self, parent=None, aspect= -1, name='Magenta Canvas'):
         
@@ -98,18 +101,10 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         
         self._save = False
 
-        self.drop_pin = drop_pin = QtGui.QPixmap("resources/images/drop-pin-large2.png")
+        self.drop_pin = QtGui.QPixmap("resources/images/drop-pin-large2.png")
         
         self.markers = {"Center" : QtCore.QPointF(0, 0)}
         
-#        self.setToolTip("This is a tooltip")
-        
-#        
-#        self.marker_tooltip_timer = QtCore.QTimer()
-#        self.marker_tooltip_timer.setSingleShot(True)
-#        self.marker_tooltip_timer.setInterval(1000)
-#        
-#        self.marker_tooltip_timer.
         
     @property
     def markers_visible(self):

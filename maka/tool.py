@@ -148,40 +148,43 @@ class ZoomTool(Tool):
         with matrix(GL.GL_PROJECTION):
             qgl_widget.data_space()
             
-#            rect = qgl_widget.bounds
-#            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
-
-#            with gl_begin(GL.GL_LINES):
-#                pass
-#
-#                    GL.glVertex2f(self.start_point.x(), self.start_point.y());
-#                    GL.glVertex2f(self.start_point.x(), self.current_point.y());
-#                    GL.glVertex2f(self.current_point.x(), self.current_point.y());
-#                    GL.glVertex2f(self.current_point.x(), self.start_point.y());
-#                    GL.glVertex2f(self.start_point.x(), self.start_point.y());
-#                    
-            with gl_disable(GL.GL_BLEND), gl_disable(GL.GL_DEPTH_TEST):
-
-                GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
-#                GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
-#                GL.glBlendFunc(GL.GL_ONE, GL.GL_ONE)
-                GL.glDepthMask(0)
-    
-                with gl_begin(GL.GL_QUADS):
-                    GL.glColor4ub(139, 0, 139, 255)
+            GL.glColor(.5, 0, .5, .5)
+            
+            with gl_enable(GL.GL_LINE_STIPPLE):
+                GL.glLineWidth(1.5)
+                GL.glLineStipple(1, 0x00FF)
+                
+                with gl_begin(GL.GL_LINES):
                     GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
-                    GL.glVertex3f(self.start_point.x(), self.current_point.y(), -1 )
+                    GL.glVertex3f(self.start_point.x(), self.current_point.y(), -1)
+    
+                    GL.glVertex3f(self.start_point.x(), self.current_point.y(), -1)
                     GL.glVertex3f(self.current_point.x(), self.current_point.y(), -1)
+    
+                    
+                    GL.glVertex3f(self.current_point.x(), self.current_point.y(), -1)
+                    GL.glVertex3f(self.current_point.x(), self.start_point.y(), -1)
+                    
                     GL.glVertex3f(self.current_point.x(), self.start_point.y(), -1)
                     GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
 
+            with gl_disable(GL.GL_DEPTH_TEST):
+                GL.glDepthMask(0)
+                with gl_enable(GL.GL_BLEND):
+                    GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
+                    with gl_begin(GL.GL_QUADS):
+                        GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
+                        GL.glVertex3f(self.start_point.x(), self.current_point.y(), -1)
+                        GL.glVertex3f(self.current_point.x(), self.current_point.y(), -1)
+                        GL.glVertex3f(self.current_point.x(), self.start_point.y(), -1)
+                        GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
+        return 
     
 
 class SelectionTool(Tool):
     def _mouseMoveEvent(self, qgl_widget, event):
         with matrix(GL.GL_MODELVIEW):
-            rect = qgl_widget.bounds
-            GLU.gluOrtho2D(rect.left(), rect.right(), rect.bottom(), rect.top())
+            qgl_widget.data_space()
             
             with matrix(GL.GL_PROJECTION):
                 viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
