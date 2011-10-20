@@ -7,7 +7,7 @@ Created on Jul 21, 2011
 from OpenGL import GL, GLU
 from PIL.Image import fromarray #@UnresolvedImport
 from PySide import QtCore, QtOpenGL, QtGui
-from PySide.QtCore import Qt
+from PySide.QtCore import Qt, QObject
 from PySide.QtGui import QMenu, QAction
 from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
 from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
@@ -17,7 +17,7 @@ import pyopencl as cl #@UnresolvedImport
 from maka.tool import PanTool, SelectionTool, ZoomTool
 
 SIZE = 100
-class MakaCanvasWidget(QtOpenGL.QGLWidget):
+class Canvas(QObject):
 
     def _get_xoff(self):
         return self._bounds.topLeft()
@@ -62,23 +62,19 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         print self.mapToGL(screen_point), point
         return screen_point
 
-    def __init__(self, parent=None, aspect= -1, name='Magenta Canvas'):
+    def __init__(self, parent, aspect= -1, name='Magenta Canvas'):
         
-        QtOpenGL.QGLWidget.__init__(self, QtOpenGL.QGLFormat(QtOpenGL.QGL.SampleBuffers), parent)
+        QObject.__init__(self, parent)
+        
         
         self.setObjectName(name)
-        self.setWindowTitle("Sample Buffers")
 
         self.aspect = aspect
         self.plots = []
         self._cl_context = None
     
-        self.setFocusPolicy(Qt.ClickFocus)
-        
         self._bounds = QtCore.QRectF(-1, -1, 2, 2)
         self._initial_bounds = QtCore.QRectF(-1, -1, 2, 2)
-        
-        self.setMouseTracking(True)
         
         self._mouse_down = False
         
@@ -101,10 +97,7 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         
         self._save = False
 
-        self.drop_pin = QtGui.QPixmap("resources/images/drop-pin-large2.png")
-        
         self.markers = {"Center" : QtCore.QPointF(0, 0)}
-        
         
     @property
     def markers_visible(self):
@@ -176,60 +169,10 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
     def reqest_redraw(self, plot):
         self.updateGL()
 
-    @property
-    def gl_context(self):
-        return self.context()
-
-    @property
-    def cl_context(self):
-        if self._cl_context is None:
-            gl_context = self.context()
-            gl_context.makeCurrent()
-            self._cl_context = cl.Context(properties=get_gl_sharing_context_properties(), devices=[])
-            
-        return self._cl_context
-
-    def initializeGL(self):
-        GL.glEnable(GL.GL_MULTISAMPLE)
-        GL.glEnable(GL.GL_LINE_SMOOTH)
-        GL.glDisable(GL.GL_DEPTH_TEST)
-        
-        self.drop_pin_tex = self.bindTexture(self.drop_pin.toImage())
-        
-    def viewport_offset(self, size=None):
-        if size is None:
-            size = self.size()
-            
-        w = size.width()
-        h = size.height()
-        
-        aspect = self.aspect
-        
-        if aspect < 0:
-            return QtCore.QPoint(0, 0)
-        elif w > h * aspect:
-            return QtCore.QPoint((w - h * aspect) / 2, 0)
-        else:
-            return QtCore.QPoint(0, (h - w / aspect) / 2)
-            
-    def resizeGL(self, w, h):
-        aspect = self.aspect
-        if aspect < 0:
-            GL.glViewport(0, 0, w, h)
-        elif w > h * aspect:
-            GL.glViewport((w - h * aspect) / 2, 0, h * aspect, h)
-        else:
-            GL.glViewport(0, (h - w / aspect) / 2, w, w / aspect)
-
-        GL.glMatrixMode(GL.GL_PROJECTION)
-        GL.glLoadIdentity()
-        GL.glMatrixMode(GL.GL_MODELVIEW)
-        GL.glLoadIdentity()
-        GL.glClearColor(1.0, 1.0, 1.0, 1.0)
-        
     def paintGL(self):
 
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+        GL.glClearColor(1.0, 1.0, 0.5, 0.0)
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
         
         qs = [plot.queue for plot in self.plots]
 
@@ -240,7 +183,6 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
             self.data_space()
         
             with matrix(GL.GL_MODELVIEW):
-                
                 
                 for plot in self.plots:
                     plot.draw()
@@ -256,6 +198,7 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         _maxSize = GL.glGetFloatv(GL.GL_POINT_SIZE_MAX_ARB)
         _minSize = GL.glGetFloatv(GL.GL_POINT_SIZE_MIN_ARB)
         
+        plot_widget = self.parent()
         
         with gl_disable(GL.GL_DEPTH_TEST), gl_disable(GL.GL_LIGHTING), \
              gl_enable(GL.GL_TEXTURE_2D), gl_enable(GL.GL_POINT_SPRITE), \
@@ -265,7 +208,7 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
 
             GL.glDepthMask(0)
             
-            GL.glBindTexture(GL.GL_TEXTURE_2D, self.drop_pin_tex)
+            GL.glBindTexture(GL.GL_TEXTURE_2D, plot_widget.drop_pin_tex)
     
             GL.glTexEnvi(GL.GL_POINT_SPRITE, GL.GL_COORD_REPLACE, GL.GL_TRUE)
             GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_REPLACE)
@@ -310,7 +253,7 @@ class MakaCanvasWidget(QtOpenGL.QGLWidget):
         if event.type() == QtCore.QEvent.ToolTip:
             return self.toolTipEvent(event)
         else:
-            return QtOpenGL.QGLWidget.event(self, event)
+            return QObject.event(self, event)
         
     def markers_at(self, atpoint):
         '''

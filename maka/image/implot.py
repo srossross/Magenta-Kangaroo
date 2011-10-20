@@ -104,9 +104,6 @@ class ImagePlot(QtCore.QObject):
         
         colormap_menu.addActions([jet_action])
         
-
-
-        
     @property
     def visible(self):
         return self._visible_act.isChecked()
