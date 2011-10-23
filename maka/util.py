@@ -140,11 +140,17 @@ class SAction(QtGui.QAction):
         self.data = data
         
         self.triggered.connect(self._triggered)
-        
+        self.toggled.connect(self._toggled)
     
     @QtCore.Slot(bool)
-    def _triggered(self, checked=False):
-        self.triggered_data.emit(checked, self.data)
+    def _toggled(self, checked):
+        self.toggled_data.emit(checked, self.data)
         
-    triggered_data = QtCore.Signal(bool, object)
+    toggled_data = QtCore.Signal(bool, object)
+    
+    @QtCore.Slot()
+    def _triggered(self):
+        self.triggered_data.emit(self.data)
+        
+    triggered_data = QtCore.Signal(object)
         

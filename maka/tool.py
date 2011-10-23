@@ -7,47 +7,55 @@ Created on Oct 15, 2011
 from OpenGL import GL, GLU
 from PySide import QtCore
 from PySide.QtCore import Qt
-from maka.util import gl_begin, matrix, gl_enable, gl_disable
+from maka.util import gl_begin, matrix, gl_enable, gl_disable, SAction
 
 
 SIZE = 100
 
 class Tool(QtCore.QObject):
     
-    def __init__(self, key):
-        super(QtCore.QObject, self).__init__()
+    def __init__(self, name, key, parent=None):
+        QtCore.QObject.__init__(self, parent=parent)
+        
         self.key = key
         
-    def _mousePressEvent(self, qgl_widget, event):
+        self.setObjectName(name)
+        
+        self.select_action = SAction(name, parent, name)
+        self.select_action.setCheckable(True)
+        self.select_action.setChecked(False)
+        
+        
+    def _mousePressEvent(self, canvas, event):
         pass
 
-    def _mouseMoveEvent(self, qgl_widget, event):
+    def _mouseMoveEvent(self, canvas, event):
         pass
 
-    def _mouseReleaseEvent(self, qgl_widget, event):
+    def _mouseReleaseEvent(self, canvas, event):
         pass
     
-    def _paintGL(self, qgl_widget):
+    def _paintGL(self, canvas):
         pass
     
 class PanTool(Tool):
     
-    def _mousePressEvent(self, qgl_widget, event):
+    def _mousePressEvent(self, canvas, event):
         
         if (event.buttons() & Qt.LeftButton):
-            self.orig = qgl_widget.mapToGL(event.pos())
+            self.orig = canvas.mapToGL(event.pos())
 
-    def _mouseMoveEvent(self, qgl_widget, event):
+    def _mouseMoveEvent(self, canvas, event):
         
         if (event.buttons() & Qt.LeftButton):
-            new = qgl_widget.mapToGL(event.pos())
+            new = canvas.mapToGL(event.pos())
             
             delta_x = new.x() - self.orig.x()
             delta_y = new.y() - self.orig.y()
             
-            qgl_widget.bounds.translate(-delta_x, -delta_y) 
+            canvas.bounds.translate(-delta_x, -delta_y) 
             
-            qgl_widget.updateGL()
+            canvas.require_redraw.emit()
             
 
 class ZoomTool(Tool):
@@ -56,18 +64,20 @@ class ZoomTool(Tool):
     
     _paint = False
     
-    def _mousePressEvent(self, qgl_widget, event):
+    def _mousePressEvent(self, canvas, event):
 
         if (not (event.buttons() & Qt.LeftButton)) or (event.modifiers() & Qt.ControlModifier):
             self._paint = False
             return
         
         self._paint = True
-        self.start_point = qgl_widget.mapToGL(event.pos())
-    
-    def modify(self, qgl_widget, start, curr):
         
-        bounds = qgl_widget.bounds
+        self.start_point = canvas.mapToGL(event.pos())
+        self.current_point = canvas.mapToGL(event.pos())
+    
+    def modify(self, canvas, start, curr):
+        
+        bounds = canvas.bounds
         aspect = abs(bounds.width() / bounds.height())
         
         dx = curr.x() - start.x()
@@ -80,7 +90,7 @@ class ZoomTool(Tool):
             sign = -1 if (dx) < 0 else 1
             curr.setX(start.x() + sign * abs(dy) / aspect)
             
-    def _mouseMoveEvent(self, qgl_widget, event):
+    def _mouseMoveEvent(self, canvas, event):
         
         if not (event.buttons() & Qt.LeftButton):
             self._paint = False
@@ -88,38 +98,41 @@ class ZoomTool(Tool):
         
         if self._paint:
             start = self.start_point
-            curr = qgl_widget.mapToGL(event.pos())
+            curr = canvas.mapToGL(event.pos())
             
             if event.modifiers() & Qt.ShiftModifier:
-                self.modify(qgl_widget, start, curr)
+                self.modify(canvas, start, curr)
                     
             self.current_point = curr    
-        qgl_widget.update()
+        canvas.require_redraw.emit()
     
-    def _mouseReleaseEvent(self, qgl_widget, event):
+    def _mouseReleaseEvent(self, canvas, event):
         self._paint = False
-        
+
         start = self.start_point
-        end = qgl_widget.mapToGL(event.pos())
+        end = canvas.mapToGL(event.pos())
+        
+        self.start_point = QtCore.QPointF(0, 0)
+        self.current_point = QtCore.QPointF(0, 0)
         
         if event.modifiers() & Qt.ControlModifier:
-            x, y = qgl_widget.bounds.x(), qgl_widget.bounds.y()
-            width, height = qgl_widget.bounds.width(), qgl_widget.bounds.height()
+            x, y = canvas.bounds.x(), canvas.bounds.y()
+            width, height = canvas.bounds.width(), canvas.bounds.height()
                                 
             rect = QtCore.QRectF(2 * x - end.x(), 2 * y - end.y(), width * 2, height * 2)
         else:
             if event.modifiers() & Qt.ShiftModifier:
-                self.modify(qgl_widget, start, end)
+                self.modify(canvas, start, end)
     
             x = start.x()
             y = start.y()
             width = end.x() - start.x()
             height = end.y() - start.y()
             
-            if (width * qgl_widget.bounds.width()) < 0:
+            if (width * canvas.bounds.width()) < 0:
                 width *= -1 
                 x = end.x()
-            if (height * qgl_widget.bounds.height()) < 0:
+            if (height * canvas.bounds.height()) < 0:
                 height *= -1 
                 y = end.y()
             
@@ -128,25 +141,25 @@ class ZoomTool(Tool):
             
             rect = QtCore.QRectF(x, y, width, height)
 
-        self.animation = QtCore.QPropertyAnimation(qgl_widget, "bounds")
+        self.animation = QtCore.QPropertyAnimation(canvas, "bounds")
         
         self.animation.setDuration(1000);
-        self.animation.setStartValue(qgl_widget.bounds)
+        self.animation.setStartValue(canvas.bounds)
         self.animation.setEndValue(rect)
         
         self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
         self.animation.start()
 
         
-        qgl_widget.update()
+        canvas.require_redraw.emit()
 
-    def _paintGL(self, qgl_widget):
+    def _paintGL(self, canvas):
         
         if not self._paint:
             return 
         
         with matrix(GL.GL_PROJECTION):
-            qgl_widget.data_space()
+            canvas.data_space()
             
             GL.glColor(.5, 0, .5, .5)
             
@@ -182,9 +195,9 @@ class ZoomTool(Tool):
     
 
 class SelectionTool(Tool):
-    def _mouseMoveEvent(self, qgl_widget, event):
+    def _mouseMoveEvent(self, canvas, event):
         with matrix(GL.GL_MODELVIEW):
-            qgl_widget.data_space()
+            canvas.data_space()
             
             with matrix(GL.GL_PROJECTION):
                 viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
@@ -201,7 +214,7 @@ class SelectionTool(Tool):
         
                 pmap = {}
                 
-                for plot in qgl_widget.plots:
+                for plot in canvas.plots:
                     name += 1
                     GL.glPopName()
                     GL.glPushName(name)
@@ -225,5 +238,5 @@ class SelectionTool(Tool):
                             require_update |= bool(plot.over(False))
                         
         if require_update:
-            qgl_widget.updateGL()
+            canvas.require_redraw.emit()
             
