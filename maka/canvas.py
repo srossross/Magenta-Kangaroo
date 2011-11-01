@@ -3,43 +3,112 @@ Created on Jul 21, 2011
 
 @author: sean
 '''
-
+from __future__ import division
 from OpenGL import GL, GLU
 from PIL.Image import fromarray #@UnresolvedImport
 from PySide import QtCore, QtGui
-from PySide.QtCore import Qt, QObject
-from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QToolBar
+from PySide.QtCore import Qt, QObject, QPoint, QPointF, Property, QPropertyAnimation
+from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QToolBar, QPalette
+from PySide.QtGui import QWidget
 from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
 import numpy as np
 import os
 from maka.tool import PanTool, SelectionTool, ZoomTool
-from PySide.QtGui import *
+#from PySide.QtGui import *
 
 SIZE = 100
-class Canvas(QObject):
 
+class MarkerAnimation(QObject):
+    '''
+    Class to animate placement of the marker.
+    '''
+    def __init__(self, name, drop_point, canvas):
+        super(MarkerAnimation, self).__init__(parent=canvas)
+        self.name = name
+        
+        end_point = canvas.mapToGL(drop_point)
+        start_point = canvas.mapToGL(QPointF(drop_point.x(), drop_point.y() - 32))
+        canvas.markers[name] = start_point
+        
+        self.animation = anim = QPropertyAnimation(self, 'pos')
+        anim.setDuration(100)
+        anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
+        
+        anim.setStartValue(start_point)
+        anim.setEndValue(end_point)
+
+    def _get_pos(self):
+        return self.parent().markers[self.name]
+    
+    def _set_pos(self, value):
+        self._pos = value
+        self.parent().markers[self.name] = value
+        self.parent().require_redraw.emit()
+
+    pos = Property(QPointF, _get_pos, _set_pos)
+    
+    def start(self):
+        self.animation.start()
+    
+    def accept(self, name):
+        '''
+        The marker will be permanent 
+        '''
+        if self.name != name:
+            old_name = self.name
+            self.parent().markers[name] = QPointF(self.parent().markers[old_name])
+            self.name = name
+            del self.parent().markers[old_name]
+            self.parent().require_redraw.emit()
+    
+    def reject(self):
+        self.animation.stop()
+        del self.parent().markers[self.name]
+
+class Canvas(QWidget):
+    '''
+    Canvas for 2D plotting. add this to a PlotWidget
+    
+    :param parent:
+    :param aspect
+    :param name:
+    :param background_color:  
+    '''
+    
     def _get_xoff(self):
         return self._bounds.topLeft()
     
     def _set_xoff(self, value):
         self._bounds.translate(value)
+        self.bounds_changed.emit()
         self.require_redraw.emit()
+    
+    offset = QtCore.Property(QtCore.QPointF, _get_xoff, _set_xoff)
         
     def _get_bounds(self):
         return self._bounds
     
     def _set_bounds(self, value):
         self._bounds = value
+        self.bounds_changed.emit()
         self.require_redraw.emit()
+        
+     
+    bounds = QtCore.Property(QtCore.QRectF, _get_bounds, _set_bounds)
     
-    offset = QtCore.Property(QtCore.QPointF, _get_xoff, _set_xoff) 
-    bounds = QtCore.Property(QtCore.QRectF, _get_bounds, _set_bounds) 
+    bounds_changed = QtCore.Signal() 
     
     def data_space(self):
+        '''
+        Set the openGL projection matrix to view the data in self.bounds. 
+        '''
         rect = self.bounds
         GLU.gluOrtho2D(rect.left(), rect.right(), rect.top(), rect.bottom())
         
     def mapToGL(self, point):
+        '''
+        Map a point in local screen space to openGL coordinates. (index space)
+        '''
         with matrix(GL.GL_MODELVIEW):
             self.data_space()
             
@@ -50,6 +119,9 @@ class Canvas(QObject):
         return QtCore.QPointF(x, y)
 
     def mapToScreen(self, point):
+        '''
+        Map a point in openGL coordinates (index space) to local screen space.
+        '''
         with matrix(GL.GL_MODELVIEW):
             self.data_space()
             
@@ -62,8 +134,16 @@ class Canvas(QObject):
 
 
     def _init_background_color(self, background_color):
+        '''
+        Initialize the background color and associated actions.
         
-        self.background_color = background_color
+        :param background_color: initial color. note that style overrides this selection.
+        '''
+        
+        if background_color is not None:
+            self.background_color = background_color
+#            self.palette().setColor(QPalette.Window, background_color)
+        
         self.bg_color_menu = bg_color_menu = QMenu("Background Color")
         
         self._color_actions = [
@@ -81,7 +161,9 @@ class Canvas(QObject):
 
 
     def _init_tools(self):
-        
+        '''
+        Initialize interaction tools and associated actions. 
+        '''
         self._current_tool = None
         
         self.tools = {'pan':PanTool('pan', key=Qt.Key_P, parent=self.parent()),
@@ -96,9 +178,9 @@ class Canvas(QObject):
 
         self.current_tool = 'pan'
         
-    def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=QtGui.QColor(255, 255, 255, 255)):
+    def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=None):
 
-        QObject.__init__(self, parent)
+        QWidget.__init__(self, parent)
         
         self.setObjectName(name)
 
@@ -122,7 +204,7 @@ class Canvas(QObject):
         
         self._save = False
 
-        self.markers = {"Center" : QtCore.QPointF(0, 0)}
+        self.markers = {}
         
         self.render_target = None
         
@@ -130,30 +212,111 @@ class Canvas(QObject):
         
         self._init_tools()
         
+    @property
+    def background_color(self):
+        '''
+        get/set the background_color from the palette
+        '''
+        return self.palette().color(QPalette.Window)
+        
+    @background_color.setter
+    def background_color(self, color):
+        '''
+        get/set the background_color from the palette
+        '''
+        palette = self.palette()
+        palette.setColor(QPalette.Window, color)
+        self.setPalette(palette)
+        
+    
+    def saveState(self, settings):
+        '''
+        Save this canvases state. 
+        
+        :param settings: a QSettings object
+        '''
+        settings.beginGroup(str(self.objectName()))
+        
+        settings.setValue('bounds', self._bounds)
+        settings.setValue('background_color', self.background_color)
+        
+        settings.beginWriteArray("markers")
+        
+        for i, (key, value) in enumerate(self.markers.items()):
+            settings.setArrayIndex(i)
+            settings.setValue("key", key)
+            settings.setValue("value", value)
+            
+        settings.endArray()
+        
+        for plot in self.plots:
+            plot.saveState(settings)
+            
+        settings.endGroup()
+
+    def restoreState(self, settings):
+        '''
+        Restore this canvases state. 
+        
+        :param settings: a QSettings object
+        '''
+        settings.beginGroup(str(self.objectName()))
+        
+        self._bounds = settings.value('bounds', self._bounds)
+        self.background_color = settings.value('background_color', self.background_color)
+        
+        size = settings.beginReadArray("markers")
+        
+        for i in range(size):
+            settings.setArrayIndex(i)
+            key = settings.value("key")
+            value = settings.value("value")
+            self.markers[key] = value
+            
+        settings.endArray()
+        
+        for plot in self.plots:
+            plot.restoreState(settings)
+
+        settings.endGroup()
+    
     tool_changed = QtCore.Signal(bool, str)
     
     @QtCore.Slot(bool, object)
     def set_tool(self, enabled, name):
-
+        '''
+        Set the current tool 
+        '''
         self._current_tool = name
         
         for tool in self.tools.values():
-            tool.select_action.blockSignals(True)
-            tool.select_action.setChecked(tool.objectName() == name)
+            tool.select_action.blockSignals(True) # Otherwise stackoverflow
+            enabled = tool.objectName() == name
+            tool.select_action.setChecked(enabled)
+            if enabled: 
+                tool.enable(self.parent())
+            else:
+                tool.disable(self.parent())
+            
             tool.select_action.blockSignals(False)
 
-    
+        
     def _get_current_tool(self):
         return self._current_tool
     
     def _set_current_tool(self, value):
         self.set_tool(True, value)
-
+        
     current_tool = QtCore.Property(str, _get_current_tool, _set_current_tool)
             
+    def enable(self):
+        self.tools[self.current_tool].enable(self.parent())
+        
     @QtCore.Slot(bool, object)
     def change_bg_color(self, color=None):
-        
+        '''
+        Cange the background color prompting with a color dialog if param `color` is None. 
+        '''
         if color is None:
             color = QColorDialog.getColor(self.background_color)
             
@@ -185,17 +348,25 @@ class Canvas(QObject):
         
     @QtCore.Slot(bool)
     def drop_marker(self):
+        '''
+        Add a marker at the current mouse position.
+        '''
         
-        point = self.mapToGL(self.drop_here)
+        tmp_marker_name = "Marker %i" % (len(self.markers),)
+        
+        self.marker_animation = MarkerAnimation(tmp_marker_name, self.drop_here, self)
+        self.marker_animation.start()
         
         global_pos = self.mapToGlobal(self.drop_here)
+        
         dialog = QtGui.QDialog()
         dialog.setWindowOpacity(.8)
         dialog.move(global_pos)
         layout = QtGui.QVBoxLayout()
         dialog.setLayout(layout)
         text = QtGui.QLineEdit(dialog)
-        text.setText("Marker %i" % (len(self.markers),))
+        
+        text.setText(tmp_marker_name)
         layout.addWidget(text)
         bbox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel, Qt.Horizontal, dialog)
         layout.addWidget(bbox)
@@ -208,15 +379,16 @@ class Canvas(QObject):
         result = dialog.exec_()
         
         if result == QtGui.QDialog.Accepted:
-            self.markers[text.text()] = point
-            self.require_redraw.emit()
+            self.marker_animation.accept(text.text())
+        else:
+            self.marker_animation.reject()
         
     @QtCore.Slot(bool)
     def save_as(self, checked=False):
-        
+        '''
+        FIXME: save to an image
+        '''
         self.makeCurrent()
-        
-        orig_size = self.size()
         
         pixmap = GL.glReadPixels(0, 0, 1000, 1000, GL.GL_BGRA, GL.GL_UNSIGNED_BYTE)
         
@@ -235,33 +407,63 @@ class Canvas(QObject):
         return self.tools[self.current_tool]
         
     def add_plot(self, plot):
+        '''
+        Add a plot to the canvas
+        '''
         plot.process()
         plot.changed.connect(self.reqest_redraw)
         self.plots.append(plot)
+        
+        if plot.parent() is None:
+            plot.setParent(self)
 
     @QtCore.Slot(QtCore.QObject)
     def reqest_redraw(self, plot):
-        self.updateGL()
+        '''
+        
+        '''
+        self.require_redraw.emit()
 
     def resizeGL(self, w, h):
+        '''
         
-        aspect = self.aspect
-        
-        if aspect < 0:
-            GL.glViewport(0, 0, w, h)
-        elif w > h * aspect:
-            GL.glViewport((w - h * aspect) / 2, 0, h * aspect, h)
-        else:
-            GL.glViewport(0, (h - w / aspect) / 2, w, w / aspect)
+        '''
+        GL.glViewport(0, 0, w, h)
             
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
+        self.projection(w / h)
+
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glLoadIdentity()
 
         self.update_render_target(w, h)
+        
+    def projection(self, screen_aspect, near= -1, far=1):
+        '''
+        not used
+        '''
+        
+        left = -1
+        right = 1
+        top = -1
+        bottom = 1
+        
+        if self.aspect == screen_aspect:
+            pass
+        elif screen_aspect > self.aspect:
+            left = -1 * screen_aspect
+            right = 1 * screen_aspect
+        else:
+            top = -1 / screen_aspect
+            bottom = 1 / screen_aspect
             
+        GL.glOrtho(left, right, top, bottom, near, far)
+        
     def update_render_target(self, w, h):
+        '''
+        Create a texture that maps to the pixels of the screen
+        '''
         if self.render_target is not None:
             GL.glDeleteTextures([self.render_target])
             
@@ -277,7 +479,9 @@ class Canvas(QObject):
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP);
 
     def render_to_texture(self):
-        
+        '''
+        Render the current state to a texture.
+        '''
         with matrix(GL.GL_PROJECTION), matrix(GL.GL_MODELVIEW):
             GL.glMatrixMode(GL.GL_PROJECTION)
             GL.glLoadIdentity()
@@ -296,8 +500,12 @@ class Canvas(QObject):
         return self.render_target
 
     def paintGL(self):
+        '''
+        Draw the current scene to OpenGL
+        '''
         bg = self.background_color
         GL.glClearColor(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF())
+        
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
         
         qs = [plot.queue for plot in self.plots]
@@ -318,6 +526,9 @@ class Canvas(QObject):
         self.tool._paintGL(self)
         
     def draw_markers(self):
+        '''
+        Draw the current markers
+        '''
         if not self.markers_visible:
             return 
         
@@ -349,7 +560,9 @@ class Canvas(QObject):
                     GL.glVertex3f(marker.x(), marker.y(), -1)
     
     def setBounds(self, rect, animate=False):
-        
+        '''
+        Set the bounds of the canvas with optional animation.
+        '''
         if animate:
             self.animation = QtCore.QPropertyAnimation(self, "bounds")
             
@@ -414,10 +627,10 @@ class Canvas(QObject):
         self.tool._mouseMoveEvent(self, event)
         
     def move_to_marker(self, name):
-        
+        '''
+        Move the bounds to the marker.
+        '''
         marker = self.markers[name]
-        
-#        print "move_to_marker", checked, marker
         
         rect = QtCore.QRectF(self.bounds)
         
@@ -426,19 +639,41 @@ class Canvas(QObject):
         rect.moveTo(x, y)
         self.setBounds(rect, animate=True)
         
-    def contextMenuEvent(self, event):
-        menu = QMenu()
+    @QtCore.Slot(object)
+    def move_to_canvas(self, canvas):
+        pass
+
+    @QtCore.Slot(object)
+    def copy_to_canvas(self, data):
+        '''
+        Copy the plot object to a new canvas
+        '''
         
-        menu.addMenu(self.tool_menu)
+        plot_idx, canvas_name = data
+        if canvas_name is None:
+            canvas_name = self.parent().new_canvas(show=False)
+            
+            if canvas_name is None:
+                return 
+            
+        self.parent().canvases[canvas_name].add_plot(self.plots[plot_idx])
         
+        print "set_current_canvas", canvas_name
+        self.parent().set_current_canvas(canvas_name)
+            
+            
+
+
+    def _ctx_markers(self, event, menu):
+        '''
+        Add marker actions to a context menu
+        '''
         self.drop_here = drop_here = event.pos()
         
         markers = QMenu("Marker")
         menu.addMenu(markers)
         markers.addAction(self.drop_marker_act)
-        
         makers_under = list(self.markers_at(drop_here))
-        
         if makers_under:
             remove_marker_act = SAction("Remove %r" % makers_under[0], self, makers_under[0])
             remove_marker_act.setEnabled(True)
@@ -446,22 +681,22 @@ class Canvas(QObject):
         else:
             remove_marker_act = QAction("Remove Marker", self)
             remove_marker_act.setEnabled(False)
-
         markers.addAction(remove_marker_act)
-        
         markers.addSeparator()
         markers.addAction(self.show_markers_act)
-
         go_to = QMenu("Go To")
         markers.addMenu(go_to)
-        
         for marker in self.markers.keys():
             action = SAction(marker, self, data=marker)
             action.triggered_data.connect(self.move_to_marker)
             go_to.addAction(action)
         
         menu.addMenu(self.bg_color_menu)
-        
+
+    def _ctx_plots(self, event, menu):
+        '''
+        Add plot actions to a context menu
+        '''
         for i, plot in enumerate(self.plots):
         
             menu.addSeparator()
@@ -473,15 +708,59 @@ class Canvas(QObject):
                 title.addAction(action)
             for sub_menu in plot.menus:
                 title.addMenu(sub_menu)
+
+            move_to_menu = QMenu("Move To")
+            copy_to_menu = QMenu("Copy To")
+            for canvas_name in self.parent().canvases:
+                if canvas_name == self.objectName():
+                    continue
                 
+                move_act = SAction(canvas_name, self, (i, canvas_name))
+                move_act.triggered_data.connect(self.move_to_canvas)
+                copy_act = SAction(canvas_name, self, (i, canvas_name))
+                copy_act.triggered_data.connect(self.copy_to_canvas)
+                
+                move_to_menu.addAction(move_act)
+                copy_to_menu.addAction(copy_act)
+                
+            move_to_menu.addSeparator()
+            move_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
+            copy_to_menu.addSeparator()
+            copy_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
+                
+            title.addMenu(move_to_menu)
+            title.addMenu(copy_to_menu)
+
+    def _ctx_parent(self, event, menu):
+        '''
+        Add PlotWidget actions to a context menu
+        '''
+        if self.parent():
+            menu.addSeparator()
+
+            for sub_menu in self.parent().ctx_menu_items['menus']:
+                menu.addMenu(sub_menu)
+            for action in self.parent().ctx_menu_items['actions']:
+                menu.addAction(action)
+
+                
+    def contextMenuEvent(self, event):
+        menu = QMenu()
         
-        p = self.mapToGlobal(event.pos())
+        menu.addMenu(self.tool_menu)
+        
+        self._ctx_markers(event, menu)
+        
+        self._ctx_plots(event, menu)
+
+        self._ctx_parent(event, menu)
+                    
+        p = event.globalPos()
         menu.exec_(p)
         
         event.accept()
         
         self.require_redraw.emit()
-    
     
     require_redraw = QtCore.Signal() 
     

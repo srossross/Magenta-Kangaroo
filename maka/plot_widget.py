@@ -4,10 +4,10 @@ Created on Oct 18, 2011
 @author: sean
 '''
 from __future__ import division
-from PySide import QtOpenGL
+from PySide import QtOpenGL, QtGui, QtCore
 from collections import OrderedDict
-from PySide.QtGui import QPixmap, QColor, QFont, QFontMetrics, QToolBar
-from PySide.QtCore import Qt, QPropertyAnimation
+from PySide.QtGui import QPixmap, QColor, QFont, QFontMetrics, QToolBar, QAction, QMenu, QInputDialog, QWhatsThis
+from PySide.QtCore import Qt, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
 from OpenGL import GL, GLU, GLUT
 from maka.canvas import Canvas
 from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
@@ -17,26 +17,30 @@ import pyopencl as cl #@UnresolvedImport
 from maka.util import gl_begin, matrix, gl_enable, gl_disable
 from PySide import QtCore
 from numpy import clip
+from contextlib import contextmanager
 
 def draw_plot():
-    
-#    GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_DECAL)
+    '''
+    Draw a unit quad (-1,1,-1,1) with a openGL texture.  
+    '''
     
     with gl_begin(GL.GL_QUADS):
         GL.glTexCoord2f(0, 0)
-        GL.glVertex(-0.25, -0.25, 0)
+        GL.glVertex(-1, -1, 0)
         
         GL.glTexCoord2f(1, 0)
-        GL.glVertex(0.25, -0.25, 0)
+        GL.glVertex(1, -1, 0)
 
         GL.glTexCoord2f(1, 1)
-        GL.glVertex(0.25, 0.25, 0)
+        GL.glVertex(1, 1, 0)
 
         GL.glTexCoord2f(0, 1)
-        GL.glVertex(-0.25, 0.25, 0)
+        GL.glVertex(-1, 1, 0)
 
 def draw_plot_reflection():
-    
+    '''
+    Not quite there yet.
+    '''
 #    GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_DECAL)
     
     with gl_disable(GL.GL_DEPTH_TEST):
@@ -47,35 +51,58 @@ def draw_plot_reflection():
             with gl_begin(GL.GL_QUADS):
                 GL.glColor(1, 1, 1, 0)
                 GL.glTexCoord2f(0, .5)
-                GL.glVertex(-0.25, -0.25 / 2 - .51, 0)
+                GL.glVertex(-1, -1 / 2 - .51, 0)
                 
 #                GL.glColor(1, 1, 1, 0)
                 GL.glTexCoord2f(1, .5)
-                GL.glVertex(0.25, -0.25 / 2 - .51, 0)
+                GL.glVertex(1, -1 / 2 - .51, 0)
         
                 GL.glColor(1, 1, 1, 0.15)
                 GL.glTexCoord2f(1, 1)
-                GL.glVertex(0.25, 0.25 - .51, 0)
+                GL.glVertex(1, 1 - .51, 0)
         
 #                GL.glColor(1, 1, 1, 0.5)
                 GL.glTexCoord2f(0, 1)
-                GL.glVertex(-0.25, 0.25 - .51, 0)
+                GL.glVertex(-1, 1 - .51, 0)
                 
 #            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_MODULATE)
             
+DISTANCE = 1.8 * 3
 
+EYE = -0.2 * 2
+TARGET = 0.05 * 2
+
+z_position = 0.75 * 2
+
+angle = 45.0
+one_x = 0.50 * 4
+next_x = 0.10 * 4
+
+
+#DISTANCE = 2.8
 class PlotWidget(QtOpenGL.QGLWidget):
+    '''
+    This is the main plot widget. 
     
-    def __init__(self, parent=None, aspect= -1, name='Magenta Plot'):
+    This widget subclasses the `QtOpenGL.QGLWidget` and contains the openGL and openCL contexts. 
+    This widget contains canvases. All data is drawn in a canvas. 
+    This widget can switch between a coverflow and individual canvas. 
+    
+    :param parent: parent widget
+    :param aspect: TODO
+    :param name: object name 
+    :param share: another PlotWidget that this will take its openGL context from. 
+    '''
+    def __init__(self, parent=None, aspect= -1, name='Magenta Plot', share=None):
         
-        QtOpenGL.QGLWidget.__init__(self, parent=parent)
+        QtOpenGL.QGLWidget.__init__(self, parent=parent, shareWidget=share)
         self.setObjectName(name)
         
         self._canvases = OrderedDict()
         
         self._current_canvas = None
         
-        self._view_state_choices = ['carousel', 'single_canvas']
+        self._view_state_choices = ['coverflow', 'single_canvas']
         self._view_state = 'single_canvas'
         
         self.drop_pin = QPixmap("resources/images/drop-pin-large2.png")
@@ -86,68 +113,267 @@ class PlotWidget(QtOpenGL.QGLWidget):
         self.setMouseTracking(True)
         self.angle_off = 0.0
         
-        self.eye = -0.2 
-        self.tgt = 0.05
+        self.eye = EYE
+        self.tgt = TARGET
         
         self._plot_position = 0.0
         self._perspective_transition = 1.0
         
         self._cl_context = None
+    
+        self.full_screen_action = QAction("Full Screen", self, shortcut='Ctrl+F')
+        self.full_screen_action.triggered.connect(self.toggle_full_screen)
+        self.fs = None
+
+        self.new_canvas_action = QAction("New Canvas", self, shortcut='Ctrl+N')
+        self.new_canvas_action.triggered.connect(self.new_canvas)
+        self.fs = None
         
-    def _get_pos(self):
+        self._menus = []
+        self._actions = [self.new_canvas_action, self.full_screen_action]
+        self.ctx_menu_items = {'menus':self._menus, 'actions':self._actions}
+        
+    def saveState(self, settings):
+        '''
+        Save the state of this widget and it's contained canvases.
+        
+        :param settings: A Qsettings object
+        '''
+        settings.beginGroup("plot")
+        settings.beginGroup(str(self.objectName()))
+        
+        settings.setValue("view_state", self._view_state)
+        settings.setValue("current_canvas", self._current_canvas)
+
+        for canvas in self._canvases.values():
+            canvas.saveState(settings)
+
+        settings.endGroup()
+        settings.endGroup()
+        
+    def restoreState(self, settings):
+        '''
+        restore the state of this widget and it's contained canvases.
+        
+        :param settings: A Qsettings object
+        '''
+
+        settings.beginGroup("plot")
+        settings.beginGroup(str(self.objectName()))
+        
+        self._view_state = settings.value("view_state", self._view_state)
+        
+        if self.coverflow_state:
+            self._perspective_transition = 0
+        else:
+            self._perspective_transition = 1
+        
+        current_canvas = settings.value("current_canvas", self._current_canvas)
+        if current_canvas in self._canvases:
+            self._current_canvas = current_canvas
+            
+        self._plot_position = self._canvases.keys().index(self._current_canvas)
+            
+        
+        for canvas in self._canvases.values():
+            canvas.restoreState(settings)
+            
+        settings.endGroup()
+        settings.endGroup()
+    
+    @QtCore.Slot()
+    def new_canvas(self, show=True):
+        '''
+        Create a new canvas. 
+        
+        :param show: Enter the canvas if show is true.
+        
+        '''
+        name, ok = QInputDialog.getText(self, "New Canvas", "Name:", text="New Canvas")
+        
+        if not ok:
+            return
+        
+        if name in self._canvases:
+            while name in self._canvases:
+                name, ok = QInputDialog.getText(self, "New Canvas", "Sorry that name already exists, choose another:", text="New Canvas")
+                if not ok:
+                    return
+                
+        if ok:
+            canvas = Canvas(parent=self, name=name)
+            self.add_canvas(canvas)
+            self.update()
+            
+            if show:
+                self.set_current_canvas(name, animate=True)
+                
+            return name
+                
+    @QtCore.Slot()
+    def toggle_full_screen(self):
+        '''
+        Toggle in and out of full screen mode.
+        '''
+        if self.fs is not None and self.fs.isVisible():
+            self.show()
+            self.fs.hide()
+        else:
+            if self.fs is None:
+                self.fs = PlotWidget(aspect=self.aspect, name=self.objectName(), share=self)
+                
+            fs = self.fs
+                
+            fs._current_canvas = self._current_canvas
+            for canvas in self._canvases.values():
+                fs.add_canvas(canvas)
+            
+            fs._view_state = self._view_state
+            fs._cl_context = self._cl_context
+            
+            self.hide()
+            fs.showFullScreen()
+    
+    def _get_plot_position(self):
         return self._plot_position
     
-    def _set_pos(self, value):
+    def _set_plot_position(self, value):
         self._plot_position = value
         self.update()
 
-    def _get_per(self):
+    def _get_perspective_transition(self):
         return self._perspective_transition
     
-    def _set_per(self, value):
+    def _set_perspective_transition(self, value):
         self._perspective_transition = value
         self.update()
-     
-    plot_position = QtCore.Property(float, _get_pos, _set_pos)
-    perspective_transition = QtCore.Property(float, _get_per, _set_per)
+    
+    #For animating changing the selected plot.  
+    plot_position = QtCore.Property(float, _get_plot_position, _set_plot_position)
+    
+    #For animating changing between the current canvas and cover flow state
+    perspective_transition = QtCore.Property(float, _get_perspective_transition, _set_perspective_transition)
     
     @property
-    def carousel_state(self):
-        return self._view_state == 'carousel'
+    def canvases(self):
+        'return the dict of current canvases'
+        return self._canvases
+    
+    @property
+    def coverflow_state(self):
+        '''
+        Test whether this widget is in coverflow state
+        '''
+        return self._view_state == 'coverflow'
 
-    def set_carousel_state(self):
-        self._view_state = 'carousel'
+    def set_coverflow_state(self):
+        '''
+        
+        Set this widget to be in coverflow state.
+        
+        No animation.
+        '''
+        self.setCursor(Qt.ArrowCursor)
+        self._view_state = 'coverflow'
 
     @property
     def single_canvas_state(self):
+        '''
+        Test whether this widget is in single canvas state
+        '''
         return self._view_state == 'single_canvas'
 
     def set_single_canvas_state(self):
+        '''
+        Set this widget to be in single canvas state
+        '''
+
         self._view_state = 'single_canvas'
         self.current_canvas.resizeGL(self.size().width(), self.size().height())
+        self.current_canvas.enable()
     
+    def set_current_canvas(self, name, animate=True, enter_target_canvas=False):
+        '''
+        Set the current canvas to be `name`.
+        
+        :param name: the object name of the canvas to set
+        :param animate: animate the transition if true
+        :param enter_target_canvas: enter canvas if true, else center in coverflow. 
+        
+        '''
+        
+        self._current_canvas = name
+        index = self._canvases.keys().index(name)
+        
+        self.animation_group = group = QSequentialAnimationGroup()
+        
+        coverflow_state = self.coverflow_state
+        
+        if not coverflow_state:
+            self.set_coverflow_state()
+            self.resizeGL(self.size().width(), self.size().height())
+            out = QPropertyAnimation(self, 'perspective_transition')
+            out.setDuration(500)
+            out.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+            out.setStartValue(1.0)
+            out.setEndValue(0.0)
+            
+            self.per_animation_out = out
+            group.addAnimation(out)
+        
+        accross = QPropertyAnimation(self, 'plot_position')
+        accross.setDuration(500)
+        accross.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+        accross.setStartValue(self.plot_position)
+        accross.setEndValue(index)
+#        accross.finished.connect(self.fin)
+        self.per_animation_accross = accross
+        group.addAnimation(accross)
+        
+        if enter_target_canvas or not coverflow_state:
+            ain = QPropertyAnimation(self, 'perspective_transition')
+            ain.setDuration(500)
+            ain.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+            ain.setStartValue(0.0)
+            ain.setEndValue(1.0)
+            ain.finished.connect(self.set_single_canvas_state)
+            group.addAnimation(ain)
+            self.per_animation_in = ain
+
+        group.start()
+
     @property
     def current_canvas(self):
+        '''
+        return the current canvas.
+        '''
         return self._canvases[self._current_canvas]
     
     def add_canvas(self, canvas):
-        
+        '''
+        Add a canvas. connects listeners
+        '''
         self._canvases[canvas.objectName()] = canvas
         canvas.require_redraw.connect(self.update)
+        canvas.update_render_target(self.size().width(), self.size().height())
         
         if self._current_canvas is None:
             self._current_canvas = canvas.objectName()
     
     def remove_canvas(self, id):
+        '''
+        Remove the canvas
+        '''
         canvas = self._canvases.pop(id)
         canvas.require_redraw.disconnect(self.update)
         
     def resizeGL(self, w, h):
         '''
+        Overload of virtual qt method.  calls delegates to current_canvas if in single canvas mode.
         '''
         self.aspect = aspect = w / h
         
-        if self.carousel_state:
+        if self.coverflow_state:
             GL.glViewport(0, 0, w, h)
             
             for canvas in self._canvases.values():
@@ -155,47 +381,65 @@ class PlotWidget(QtOpenGL.QGLWidget):
 
             GL.glMatrixMode(GL.GL_PROJECTION)
             GL.glLoadIdentity()
-            GLU.gluPerspective(45.0, 1.0 * w / h, 0.5, 10.0)
+            GLU.gluPerspective(45.0, 1.0 * w / h, 0.15, 30.0)
             
             GL.glMatrixMode(GL.GL_MODELVIEW)
             GL.glLoadIdentity()
-            GLU.gluLookAt(0.0, self.eye, 1.8,
+            GLU.gluLookAt(0.0, self.eye, DISTANCE,
                           0.0, self.tgt, 0.0,
                           0.0, 1.0, 0.0)
         else:
             self.current_canvas.resizeGL(w, h)
         
     def initializeGL(self):
+        '''
+        Initialize the openGL context.
+        '''
         GL.glEnable(GL.GL_MULTISAMPLE)
         GL.glEnable(GL.GL_LINE_SMOOTH)
+        GL.glEnable(GL.GL_POLYGON_SMOOTH)
+        
+        GL.glHint(GL.GL_LINE_SMOOTH_HINT, GL.GL_NICEST)
+        GL.glHint(GL.GL_POLYGON_SMOOTH_HINT, GL.GL_NICEST)
+        
         GL.glDisable(GL.GL_DEPTH_TEST)
         
         self.drop_pin_tex = self.bindTexture(self.drop_pin.toImage())
         
-    @QtCore.Slot()
-    def rotate(self):
-        self.angle_off += 1
-        self.update()
-        
     def paintGL(self):
-        if self.carousel_state:
-            self.draw_carousel()
+        '''
+        Main called for screen updates. 
+        '''
+        if self.coverflow_state:
+            self.draw_coverflow()
         else:
             self.current_canvas.paintGL()
     
     def set_fog_params(self):
+        '''
+        set fog for coverflow. 
+        
+        Note gl_enable(GL.GL_FOG) must be called before this.
+        '''
         GL.glFogfv(GL.GL_FOG_COLOR, (.0, .0, .0))
         GL.glFogi(GL.GL_FOG_MODE, GL.GL_LINEAR)
-        GL.glFogf(GL.GL_FOG_START, 1)
-        GL.glFogf(GL.GL_FOG_END, 2.5)
+        GL.glFogf(GL.GL_FOG_START, DISTANCE - z_position)
+        GL.glFogf(GL.GL_FOG_END, DISTANCE + z_position)
 
     def interpolate_matricies(self):
-        per = self.perspective_transition
+        '''
+        Linearly Interpolate both the GL_PROJECTION_MATRIX and GL_MODELVIEW_MATRIX.
+        from self.perspective_transition==0 (coverflow) to self.perspective_transition==1 (single_canvas) 
+        
+        '''
+        per = self.perspective_transition 
         projection_1 = np.array(GL.glGetDouble(GL.GL_PROJECTION_MATRIX)) 
 
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
-        GLU.gluOrtho2D(-0.25, 0.25, -0.25, 0.25)
+        
+        self.current_canvas.projection(self.size().width() / self.size().height(), 0.15, DISTANCE + z_position)
+
         projection_2 = np.array(GL.glGetDouble(GL.GL_PROJECTION_MATRIX)) 
         GL.glLoadIdentity()
         GL.glLoadMatrixd(((1 - per) * projection_1) + (per * projection_2))
@@ -203,18 +447,15 @@ class PlotWidget(QtOpenGL.QGLWidget):
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glLoadIdentity()
         
-        GLU.gluLookAt(0.0, (1.0 - per) * self.eye, 1.8 - (0.1 * abs(per)),
+        GLU.gluLookAt(0.0, (1.0 - per) * self.eye, DISTANCE,
                       0.0, (1.0 - per) * self.tgt, 0.0,
                       0.0, 1.0, 0.0)
 
-
-    def draw_carousel(self):
-        
-        canvas_textures = OrderedDict((name, canvas.render_to_texture()) for name, canvas in self._canvases.items())
-        
-        GL.glInitNames()
-        
-
+    @contextmanager
+    def coverflow_view(self):
+        '''
+        Set the GL_PROJECTION and GL_MODELVIEW matrices for coverflow state 
+        '''
         with matrix(GL.GL_PROJECTION), matrix(GL.GL_MODELVIEW):
             
             per = self.perspective_transition
@@ -224,7 +465,51 @@ class PlotWidget(QtOpenGL.QGLWidget):
                 GL.glClearColor(per * bg.redF(), per * bg.greenF(), per * bg.blueF(), 0)
             else:
                 GL.glClearColor(.0, .0, .0, 0)
+
+            yield
+            
+        pass
+        
+        
+    def draw_coverflow2(self):
+        '''
+        Draw the coverflow for selection rendering / picking 
+        '''
+        GL.glInitNames()
+        
+        GL.glDepthMask(True)
+        
+        global_pos = self.plot_position
+        
+        for i, _ in enumerate(self._canvases.keys()):
+            pos = i - global_pos
+            if abs(pos) < 1:
+                current_z = (1 - abs(pos)) * z_position
+                current_x = (pos) * one_x 
+                current_angle = (pos) * -angle
+            else:
+                current_z = 0.0 
+                direction = (-1 if pos < 0 else 1)
+                current_x = direction * (one_x - next_x) + next_x * pos 
+                current_angle = -direction * angle
+
+            with matrix(GL.GL_MODELVIEW):
+                GL.glTranslatef(current_x, 0.0, current_z)
+                GL.glRotate(current_angle, 0, 1, 0)
                 
+                GL.glPushName(i)
+                draw_plot()
+                GL.glPopName()
+                
+    def draw_coverflow(self):
+        '''
+        Draw the coverflow 
+        '''
+        canvas_textures = OrderedDict((name, canvas.render_to_texture()) for name, canvas in self._canvases.items())
+        
+
+        with self.coverflow_view():
+            
             GL.glEnable(GL.GL_DEPTH_TEST)
             GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
             
@@ -238,7 +523,7 @@ class PlotWidget(QtOpenGL.QGLWidget):
             fw = fm.width(self._current_canvas)
             fh = fm.height()
             
-            GL.glColor(1, 1, 1, 0)
+            GL.glColor(1, 1, 1, 1)
             self.renderText(self.size().width() / 2 - fw / 2, self.size().height() - fh, self._current_canvas, font)
             
             global_pos = self.plot_position
@@ -246,18 +531,17 @@ class PlotWidget(QtOpenGL.QGLWidget):
             with gl_enable(GL.GL_FOG):
                 self.set_fog_params()
                 
-#                for draw in [draw_plot_reflection, draw_plot]:
                 for i, name in enumerate(self._canvases.keys()):
                     pos = i - global_pos
                     if abs(pos) < 1:
-                        current_z = (1 - abs(pos)) * 0.75 
-                        current_x = (pos) * 0.50 
-                        current_angle = (pos) * -45.0
+                        current_z = (1 - abs(pos)) * z_position
+                        current_x = (pos) * one_x 
+                        current_angle = (pos) * -angle
                     else:
                         current_z = 0.0 
                         direction = (-1 if pos < 0 else 1)
-                        current_x = direction * 0.40 + 0.10 * pos 
-                        current_angle = -direction * 45
+                        current_x = direction * (one_x - next_x) + next_x * pos 
+                        current_angle = -direction * angle
     
                     with matrix(GL.GL_MODELVIEW):
                         GL.glTranslatef(current_x, 0.0, current_z)
@@ -265,17 +549,16 @@ class PlotWidget(QtOpenGL.QGLWidget):
                         
                         with gl_enable(GL.GL_TEXTURE_2D):
                             GL.glBindTexture(GL.GL_TEXTURE_2D, canvas_textures[name])
-                            GL.glPushName(i)
                             draw_plot()
-#                            draw_plot_reflection()
-                            GL.glPopName(i)
-        
+    
     @property
     def gl_context(self):
+        'return the openGL context'
         return self.context()
 
     @property
     def cl_context(self):
+        'return the openCL context'
         if self._cl_context is None:
             gl_context = self.context()
             gl_context.makeCurrent()
@@ -284,71 +567,167 @@ class PlotWidget(QtOpenGL.QGLWidget):
         return self._cl_context
 
     def event(self, event):
+        '''
+        Overload the event method to add a toolTipEvent for the canvas.
+        '''
         if event.type() == QtCore.QEvent.ToolTip:
             return self.toolTipEvent(event)
         else:
             return QtOpenGL.QGLWidget.event(self, event)
         
+    
     def toolTipEvent(self, event):
-        if self.carousel_state:
+        '''
+        We want tool tip events for specific non-qt targets within a plot.  
+        '''
+        if self.coverflow_state:
             return False
         else:
             return self.current_canvas.toolTipEvent(event)
 
     def mousePressEvent(self, event):
-        if self.carousel_state:
+        if self.coverflow_state:
             return
         else:
             self.current_canvas.mousePressEvent(event)
         
     def mouseReleaseEvent(self, event):
-        if self.carousel_state:
-            return
+        if self.coverflow_state:
+            index = self.test_over(event.pos())
+            
+            if index is not None:
+                self.goto_canvas(index)
         else:
             self.current_canvas.mouseReleaseEvent(event)
+            
+    def mouseDoubleClickEvent(self, event):
+        if self.coverflow_state:
+            index = self.test_over(event.pos())
+            if index is not None:
+                self.set_single_canvas_state()
+
+    def test_over(self, pos):
+        '''
+        Test what canvas the mouse is over in coverflow mode.
+        returns None or the name of a canvas.
+        '''
+        if not self.coverflow_state:
+            return None
         
+        with matrix(GL.GL_MODELVIEW), matrix(GL.GL_PROJECTION):
+            GL.glMatrixMode(GL.GL_PROJECTION)
+            GL.glLoadIdentity()
+            
+            viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
+            GLU.gluPickMatrix(pos.x(), viewport[3] - pos.y(), 4, 4, viewport)
+            GLU.gluPerspective(45.0, 1.0 * viewport[2] / viewport[3], 0.15, 30.0)
+        
+            GL.glMatrixMode(GL.GL_MODELVIEW)
+            GL.glLoadIdentity()
+            
+            GLU.gluLookAt(0.0, self.eye, DISTANCE,
+                          0.0, self.tgt, 0.0,
+                          0.0, 1.0, 0.0)
+        
+            GL.glRenderMode(GL.GL_RENDER)
+            GL.glSelectBuffer(20)
+            GL.glRenderMode(GL.GL_SELECT)
+            
+            self.draw_coverflow2()
+            
+            GL.glFlush()
+            
+            hits = GL.glRenderMode(GL.GL_RENDER)
+            
+            if hits:
+                
+                top_hit = sorted(hits, key=lambda hit: hit[0])[0]
+                index = top_hit[2][0]
+                return index
+            else:
+                return None
+
     def mouseMoveEvent(self, event):
         
-        if self.carousel_state:
-            pass
-#            print "mouseMoveEvent"
-            # FIXME: doesnt work
-#            viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
-#            GLU.gluPickMatrix(event.pos().x(), viewport[3] - event.pos().y(), 4, 4, viewport)
-#        
-#            GL.glRenderMode(GL.GL_SELECT)
-#            GL.glSelectBuffer(20)
-#    
-#            GL.glInitNames()
-#            
-#            GL.glFlush()
-#            
-#            hits = GL.glRenderMode(GL.GL_RENDER)
-            
+        self.makeCurrent()
+        
+        if self.coverflow_state:
+            if self.test_over(event.pos()) is None:
+                self.setCursor(Qt.ArrowCursor)
+            else:
+                self.setCursor(Qt.PointingHandCursor)
         else:
             self.current_canvas.mouseMoveEvent(event)
 
     def contextMenuEvent(self, event):        
-        if self.carousel_state:
-            return
+        if self.coverflow_state:
+
+            menu = QMenu()
+            
+            for action in self._actions:
+                menu.addAction(action)
+                
+            for sub_menu in self._menus:
+                menu.addMenu(sub_menu)
+            
+            p = event.globalPos()
+            menu.exec_(p)
+            
+            event.accept()
+            
         else:
             self.current_canvas.contextMenuEvent(event)
-    
-    QtCore.Slot()
-    def fin(self):
-        print "=========="
         
+    def animate_single_canvas_state(self):
+        '''
+        animate the transition to the single_canvas_state by setting perspective_transition property from current to 0.
+        '''
+        self.per_animation = QPropertyAnimation(self, 'perspective_transition')
+        self.per_animation.setDuration(1000);
+        self.per_animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+        self.per_animation.setStartValue(self.perspective_transition)
+        self.per_animation.setEndValue(1.0)
+        self.per_animation.start()
+        self.per_animation.finished.connect(self.set_single_canvas_state)
+
+
+    def goto_canvas(self, index):
+        '''
+        Set the canvas at index `index`
+        '''
+        print "goto_canvas", index
+        names = self._canvases.keys()
+        
+        self._current_canvas = names[index]
+        self.animation = QPropertyAnimation(self, 'plot_position')
+        self.animation.setDuration(1000)
+        self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+        self.animation.setStartValue(self.plot_position)
+        self.animation.setEndValue(float(index))
+        
+        self.animation.start()
+
+    def animate_coverflow_state(self):
+        '''
+        animate the transition to the single_canvas_state by setting perspective_transition property from current to 1.
+        '''
+
+        self.set_coverflow_state()
+        self.resizeGL(self.size().width(), self.size().height())
+        self.per_animation = QPropertyAnimation(self, 'perspective_transition')
+        self.per_animation.setDuration(1000)
+        self.per_animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+        self.per_animation.setStartValue(self.perspective_transition)
+        self.per_animation.setEndValue(0.0)
+        self.per_animation.start()
+
     def keyPressEvent(self, event):
-        if self.carousel_state:
+        '''
+        TODO: 
+        '''
+        if self.coverflow_state:
             if event.key() in [Qt.Key_Enter, Qt.Key_Return]:
-                print "Enter"
-                self.per_animation = QPropertyAnimation(self, 'perspective_transition')
-                self.per_animation.setDuration(1000);
-                self.per_animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
-                self.per_animation.setStartValue(self.perspective_transition)
-                self.per_animation.setEndValue(1.0)
-                self.per_animation.start()
-                self.per_animation.finished.connect(self.set_single_canvas_state)
+                self.animate_single_canvas_state()
             else:
                 names = self._canvases.keys()
                 index = names.index(self._current_canvas)
@@ -363,27 +742,10 @@ class PlotWidget(QtOpenGL.QGLWidget):
                             return 
                         pos = 1
                     
-                    self._current_canvas = names[index + pos]
-                    self.animation = QPropertyAnimation(self, 'plot_position')
-                    self.animation.setDuration(1000);
-                    self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
-                    self.animation.setStartValue(self.plot_position)
-                    self.animation.setEndValue(index + pos)
-                    self.animation.start()
-                    self.animation.finished.connect(self.fin)
+                    self.goto_canvas(index + pos)
         else:
             if event.key() == Qt.Key_Escape:
-                
-                self.set_carousel_state()
-                self.resizeGL(self.size().width(), self.size().height())
-                self.per_animation = QPropertyAnimation(self, 'perspective_transition')
-                self.per_animation.setDuration(1000)
-                self.per_animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
-                self.per_animation.setStartValue(self.perspective_transition)
-                self.per_animation.setEndValue(0.0)
-                self.per_animation.start()
-#                self.animation.finished.connect(self.set_single_canvas_state)
-#                self.update()
-                
-            self.current_canvas.keyPressEvent(event)
+                self.animate_coverflow_state()
+            else:
+                self.current_canvas.keyPressEvent(event)
 

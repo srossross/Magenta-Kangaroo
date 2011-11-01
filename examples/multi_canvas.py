@@ -4,16 +4,21 @@ Created on Oct 19, 2011
 @author: sean
 '''
 
+
 import sys
 from PySide import QtCore, QtGui, QtOpenGL
-from PySide.QtGui import QColor
-from pyopencl import Program 
+from PySide.QtGui import QColor, QMainWindow, QMenu, QMenuBar, QWidget, QSlider, QVBoxLayout
+
+from pyopencl import Program, Buffer, mem_flags, enqueue_copy #@UnresolvedImport
 import numpy as np
 from maka.plot.line import LinePlot
 from maka.cl_pipe import ComputationalPipe
 from maka.util import bring_to_front, execute
 from maka.plot_widget import PlotWidget
 from maka.canvas import Canvas
+from maka.image.implot import ImagePlot, Interp
+from maka.image.color_map import ColorMap
+
 
 n_vertices = 100
 
@@ -31,13 +36,61 @@ __kernel void generate_sin(__global float2* a, float scale)
 }
 """
 
+def get_data():
+    import PIL.Image #@UnresolvedImport
+    
+    im = PIL.Image.open('lena.bmp')
+    ix, iy = im.size[0], im.size[1]
+    image = im.tostring('raw', 'RGB')
+    
+    a = np.frombuffer(image, dtype=np.uint8)
+    a.resize(512, 512, 3)
+    #
+    image = np.zeros([512, 512, 4], dtype=np.uint8)
+    image[:, :, :3] = a
+    image[:, :, 3] = 128
+    return np.array(image[:, :, :3].sum(-1), dtype=np.float32)
+
+def create_image_canvas(plot):
+    
+    canvas = Canvas(parent=plot, aspect=1)
+
+    gl_context = plot.gl_context
+    cl_context = plot.cl_context
+
+    data = get_data()
+    
+    shape = list(data.shape)
+
+    implot = ImagePlot(gl_context, cl_context, shape, name='Lena', share=False, interp=Interp.NEAREST)
+
+    cl_data = Buffer(cl_context, mem_flags.READ_WRITE, data.nbytes)
+
+    import pylab
+    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
+    pipe_segment = ColorMap(gl_context, cl_context, cdict,
+                                     cl_data, implot.texture.cl_image,
+                                     shape, clim=(np.float32(data.min()), np.float32(data.max())))
+    
+    enqueue_copy(implot.queue, cl_data, data)
+
+    implot.queue.finish()
+
+    implot._pipe_segments.append(pipe_segment)
+
+    implot.process()
+
+    canvas.add_plot(implot)
+
+    return canvas
+
 def plot_on_canvas(canvas):
 
     gl_context = canvas.parent().gl_context
     cl_context = canvas.parent().cl_context
 
-    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(255, 0, 0), name="Plot 1")
-    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(0, 200, 50), name="Plot 2")
+    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(255, 0, 0), name="Plot1", parent=canvas)
+    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(0, 200, 50), name="Plot2", parent=canvas)
     
     generate_sin = Program(cl_context, src).build().generate_sin
 
@@ -51,6 +104,8 @@ def plot_on_canvas(canvas):
 
 def main(args):
     app = QtGui.QApplication(args)
+    
+    
 
     f = QtOpenGL.QGLFormat.defaultFormat()
 
@@ -58,26 +113,69 @@ def main(args):
     QtOpenGL.QGLFormat.setDefaultFormat(f)
     
     plot_widget = PlotWidget(name='My Plots') 
-
+    
     canvas = Canvas(plot_widget, name='P1')
+    
+    image_canvas = create_image_canvas(plot_widget)
+    
     plot_widget.add_canvas(canvas)
+    plot_widget.add_canvas(image_canvas)
     
     plot_on_canvas(canvas)
     
-#    plot.add_canvas(Canvas(plot, name='Yellow', background_color=QColor(255, 255, 0)))
-#    plot.add_canvas(Canvas(plot, name='Magenta', background_color=QColor(255, 0, 255)))
-#    plot.add_canvas(Canvas(plot, name='Green', background_color=QColor(0, 255, 0)))
-#    plot.add_canvas(Canvas(plot, name='Blue', background_color=QColor(0, 0, 255)))
-
-    plot_widget.resize(640, 480)
-
-    plot_widget.show()
-
-    bring_to_front()
+    settings = QtCore.QSettings("Enthought", "multi_canvas")
     
+    main = QMainWindow()
+    
+    main.resize(640, 480)
+    
+    w = QWidget()
+    layout = QVBoxLayout()
+    w.setLayout(layout)
+    slider = QSlider(w)
+    layout.addWidget(slider)
+    slider.setOrientation(QtCore.Qt.Horizontal)
+    slider.setMinimum(0)
+    slider.setMaximum(100)
+
+    layout.addWidget(plot_widget)
+    
+    main.setCentralWidget(w)
+    
+    menu_bar = QMenuBar()
+    
+    view_menu = QMenu("View")
+    view_menu.addAction(plot_widget.full_screen_action)
+    menu_bar.addMenu(view_menu)
+    main.setMenuBar(menu_bar)
+    
+    
+    app.setStyleSheet("""
+    Canvas {
+        background : blue;
+    }
+    
+    LinePlot#Plot1 {
+        color : white;
+        qproperty-line_style: dot;
+        qproperty-thickness: 1;
+    } 
+    """)
+
+    main.restoreState(settings.value('window_state'))
+    main.restoreGeometry(settings.value('window_geom'))
+    plot_widget.restoreState(settings)
+    
+    main.show()
+    
+    bring_to_front()
     execute(app, epic_fail=True)
 
+    settings.setValue('window_state', main.saveState())
+    settings.setValue('window_geom', main.saveGeometry())
+    plot_widget.saveState(settings)
     
+    print 'settings.fileName', settings.fileName()
 if __name__ == '__main__':
     main(sys.argv)
     

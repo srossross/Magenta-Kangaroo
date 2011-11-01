@@ -8,7 +8,7 @@ from PySide.QtGui import QAction, QMenu
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
 import numpy as np
-from maka.util import gl_begin, gl_enable
+from maka.util import gl_begin, gl_enable, gl_disable
 
 class Texture2D(object):
     def __init__(self, cl_ctx, texture, shape, hostbuf=None, share=True):
@@ -42,6 +42,7 @@ class Texture2D(object):
 
     def __enter__(self):
 
+        GL.glEnable(GL.GL_TEXTURE_2D)
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.texture)
 
         if self.have_image_support:
@@ -54,7 +55,7 @@ class Texture2D(object):
             GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA, self.shape[1], self.shape[0], 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, self._array)
 
     def __exit__(self, *args):
-        pass
+        GL.glDisable(GL.GL_TEXTURE_2D)
 
 from OpenGL.GL import GL_LINEAR as LINEAR, GL_NEAREST as NEAREST
 
@@ -74,16 +75,16 @@ class ImagePlot(QtCore.QObject):
         self.cl_context = cl_context
 
         texture = GL.glGenTextures(1)
-
-        GL.glEnable(GL.GL_TEXTURE_2D);
-        GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
-
-        GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
-
-        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, interp)
-        GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
-
         self.texture = Texture2D(cl_context, texture, shape, share=share)
+        
+        self.interp = interp
+        with self.texture:
+#        GL.glEnable(GL.GL_TEXTURE_2D);
+#        GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
+            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, interp)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
+
 
         self.queue = cl.CommandQueue(self.cl_context)
 
@@ -96,7 +97,7 @@ class ImagePlot(QtCore.QObject):
         self._actions = {'visible': self._visible_act}
         
         
-        self._colormap_menu = colormap_menu =  QMenu('Color Map')
+        self._colormap_menu = colormap_menu = QMenu('Color Map')
         self._menus = {'colormap': colormap_menu}
         
         jet_action = QAction('jet', self)
@@ -112,6 +113,21 @@ class ImagePlot(QtCore.QObject):
     def visible(self, value):
         self._visible_act.setChecked(bool(value))
     
+    def saveState(self, settings):
+        settings.beginGroup(str(self.objectName()))
+        
+        settings.setValue('visible', self.visible)
+        
+        settings.endGroup()
+
+    
+    def restoreState(self, settings):
+        settings.beginGroup(str(self.objectName()))
+
+        self.visible = settings.value('visible', self.visible)
+        
+        settings.endGroup()
+
     def process(self):
 
         for segment in self._pipe_segments:
@@ -120,19 +136,27 @@ class ImagePlot(QtCore.QObject):
         return self.queue
 
     def draw(self):
+        
         if not self.visible:
-            return 
+            return
+         
         GL.glColor4ub(255, 0, 0, 0);
         
-        
-        with self.texture:
-            with gl_enable(GL.GL_BLEND):
-                GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
-                with gl_begin(GL.GL_QUADS):
-                    GL.glTexCoord2f(0, 0); GL.glVertex2f(-1, 1);
-                    GL.glTexCoord2f(1, 0); GL.glVertex2f(1, 1);
-                    GL.glTexCoord2f(1, 1); GL.glVertex2f(1, -1);
-                    GL.glTexCoord2f(0, 1); GL.glVertex2f(-1, -1);
+#        with self.texture:
+#            with gl_enable(GL.GL_BLEND):
+#                GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
+
+        with gl_disable(GL.GL_DEPTH_TEST), self.texture:
+#            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
+#            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, self.interp)
+#            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, self.interp)
+#            GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
+            
+            with gl_begin(GL.GL_QUADS):
+                GL.glTexCoord2f(0, 0); GL.glVertex2f(-1, 1);
+                GL.glTexCoord2f(1, 0); GL.glVertex2f(1, 1);
+                GL.glTexCoord2f(1, 1); GL.glVertex2f(1, -1);
+                GL.glTexCoord2f(0, 1); GL.glVertex2f(-1, -1);
     @property
     def actions(self):
         return self._actions.values()
@@ -140,3 +164,6 @@ class ImagePlot(QtCore.QObject):
     @property
     def menus(self):
         return self._menus.values()
+    
+    def over(self, test):
+        pass

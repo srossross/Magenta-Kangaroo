@@ -6,14 +6,18 @@ Created on Oct 15, 2011
 
 from OpenGL import GL, GLU
 from PySide import QtCore
-from PySide.QtCore import Qt
+from PySide.QtCore import Qt, QPropertyAnimation
+from PySide.QtGui import QCursor
 from maka.util import gl_begin, matrix, gl_enable, gl_disable, SAction
 
-
+from time import time
+from numpy import mean
 SIZE = 100
 
 class Tool(QtCore.QObject):
-    
+    '''
+    Base tool class.
+    '''
     def __init__(self, name, key, parent=None):
         QtCore.QObject.__init__(self, parent=parent)
         
@@ -24,7 +28,7 @@ class Tool(QtCore.QObject):
         self.select_action = SAction(name, parent, name)
         self.select_action.setCheckable(True)
         self.select_action.setChecked(False)
-        
+        self._enabled = False
         
     def _mousePressEvent(self, canvas, event):
         pass
@@ -38,24 +42,108 @@ class Tool(QtCore.QObject):
     def _paintGL(self, canvas):
         pass
     
+    def enable(self, plot_widget):
+        pass
+
+    def disable(self, plot_widget):
+        if self._enabled:
+            self._enabled = False
+            
 class PanTool(Tool):
     
-    def _mousePressEvent(self, canvas, event):
+    
+    def enable(self, plot_widget):
+        if not self._enabled:
+            self.plot_widget = plot_widget
+            plot_widget.setCursor(Qt.OpenHandCursor)
+            self._enabled = True
+
+    def _get_delta(self):
+        return self._delta
+    
+    def _set_delta(self, value):
+        self._delta = value
+        self.canvas.bounds.translate(-self._delta.x(), -self._delta.y())
+        self.canvas.require_redraw.emit()
         
+    delta = QtCore.Property(QtCore.QPointF, _get_delta, _set_delta)
+    
+    def __init__(self, name, key, parent=None):
+        Tool.__init__(self, name, key, parent)
+        
+        self._delta = QtCore.QPointF(0, 0)
+        self._deltas = [None, None, None, None, None]
+        self._time = 0 
+        
+        self.animation = QPropertyAnimation(self, 'delta')
+        self.animation.setDuration(1000)
+        self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
+#        self.animation.start()
+
+        
+    def _mousePressEvent(self, canvas, event):
+        self._delta = QtCore.QPointF(0, 0)
+        self._time = 0 
         if (event.buttons() & Qt.LeftButton):
+            self.plot_widget.setCursor(Qt.ClosedHandCursor)
+            self.animation.stop()
             self.orig = canvas.mapToGL(event.pos())
 
     def _mouseMoveEvent(self, canvas, event):
         
         if (event.buttons() & Qt.LeftButton):
+            self.animation.stop()
             new = canvas.mapToGL(event.pos())
             
             delta_x = new.x() - self.orig.x()
             delta_y = new.y() - self.orig.y()
             
+            self._delta = QtCore.QPointF(delta_x, delta_y)
+            self._deltas.pop(0)
+            self._deltas.append((self._delta, time()))
+            
+            self._time = time()
+            
             canvas.bounds.translate(-delta_x, -delta_y) 
             
             canvas.require_redraw.emit()
+        else:
+            self._delta = QtCore.QPointF(0, 0)
+            self._time = 0
+            
+            
+    def _mouseReleaseEvent(self, canvas, event):
+        self.plot_widget.setCursor(Qt.OpenHandCursor)
+        
+        deltas = [d for d in self._deltas if d is not None]
+        
+        if len(deltas) < 2:
+            return 
+        self._deltas = [None] * 5
+        
+        fps = 60
+        dxy = QtCore.QPointF(mean(list(d[0].x() for d in deltas)), mean(list(d[0].y() for d in deltas)))
+        
+#        print 'dt', (deltas[-1][1] , deltas[0][1]) , (len(deltas) - 1)
+        dt = (deltas[-1][1] - deltas[0][1]) / (len(deltas) - 1)
+        
+        if dt == 0 or (dxy.manhattanLength() == 0):
+            self.animation.stop()
+            return
+        if ((time() - deltas[-1][1]) > .125):
+            self.animation.stop()
+            return 
+        
+        x = (dxy.x() / dt) / fps
+        y = (dxy.y() / dt) / fps
+        
+        
+        self.canvas = canvas
+        self.animation.setStartValue(QtCore.QPointF(x, y))
+        self.animation.setEndValue(QtCore.QPointF(0, 0))
+        self.animation.start()
+        
+        
             
 
 class ZoomTool(Tool):
@@ -193,8 +281,14 @@ class ZoomTool(Tool):
                         GL.glVertex3f(self.start_point.x(), self.start_point.y(), -1)
         return 
     
+    def enable(self, plot_widget):
+        if not self._enabled:
+            plot_widget.setCursor(Qt.CrossCursor)
+            self._enabled = True
+
 
 class SelectionTool(Tool):
+    
     def _mouseMoveEvent(self, canvas, event):
         with matrix(GL.GL_MODELVIEW):
             canvas.data_space()
@@ -240,3 +334,7 @@ class SelectionTool(Tool):
         if require_update:
             canvas.require_redraw.emit()
             
+    def enable(self, plot_widget):
+        if not self._enabled:
+            plot_widget.setCursor(Qt.PointingHandCursor)
+            self._enabled = True

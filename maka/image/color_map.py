@@ -10,6 +10,7 @@ import numpy as np
 
 class ColorMap(ComputationalPipe):
     src = """
+    uchar map_color(float norm, __global const float4* cmap);
     
     uchar map_color(float norm, __global const float4* cmap) {
         
@@ -46,13 +47,13 @@ class ColorMap(ComputationalPipe):
                           __global const float4* blue_map,
                           float ulimit_lower, float ulimit_upper)
     {
-        float lin;
+        //float lin;
         uchar4 result = (uchar4)(0,0,0,0);
         int idx = get_global_id(0);
         int idy = get_global_id(1);
         
         int nx = get_global_size(0);
-        int ny = get_global_size(1);
+        // int ny = get_global_size(1);
         
         int id = idx + nx * idy;
         
