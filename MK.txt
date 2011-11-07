@@ -1,0 +1,63 @@
+MK:
+    Tests.
+    
+    Multiple plots (subplot)
+    Transparent ToolBar.
+    Open in new window.
+    Tutorial mode.
+    Gallery.
+    Busy screen / Blur filter.
+    Depth/Shadow filter.
+    Coverflow:
+        Reflections
+        Drag and drop.
+        
+    Multiple window support.
+    Kiva/enable integration.
+    Functional interface.
+    Numpy integration.
+    
+    2D:
+        Grid in Background.
+        Wiggle plot
+        Bar chart w/ 2D+3D style
+        Pie Chart w/ 2D+3D style
+        Legend.
+        Initial bounds to be set by data bounds.
+        Index mapped to data space.
+        Shared Bounds
+        Polygon fill.
+        Line plot:
+            Color Fill.
+            Scatter plot.
+            Error bars
+            
+        Image Plot:
+            Colorbar.
+            Contour 
+            Change color-maps
+        
+        Filter window. Process data and view in a overlay.
+
+    3D:
+        Create Scene3DCanvas
+        Wireframe
+        Horizon 
+        Large data support.
+        
+        
+        
+For the Demo:
+    The issues/improvements:
+        Nice to use / sleek. momentum scrolling, coverflow etx
+        
+        Context menu
+        Data persistance.
+        Style sheets.
+        GPU integration. this is fast!
+        Integrated learning environment.
+        Gallery.
+        Gap between matplotlib. and chaco is large.
+        
+        
+    

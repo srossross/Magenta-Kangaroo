@@ -44,7 +44,8 @@ def create_image_canvas(plot):
     cl_data = cl.Buffer(cl_context, cl.mem_flags.READ_WRITE, data.nbytes)
 
     import pylab
-    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
+#    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
+    cdict = pylab.cm.gray._segmentdata #@UndefinedVariable
     pipe_segment = ColorMap(gl_context, cl_context, cdict,
                                      cl_data, implot.texture.cl_image,
                                      shape, clim=(np.float32(data.min()), np.float32(data.max())))

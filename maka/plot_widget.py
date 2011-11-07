@@ -120,17 +120,21 @@ class PlotWidget(QtOpenGL.QGLWidget):
         self._perspective_transition = 1.0
         
         self._cl_context = None
-    
+        
+        self.fs = None
+        self.windows = []
+        
         self.full_screen_action = QAction("Full Screen", self, shortcut='Ctrl+F')
         self.full_screen_action.triggered.connect(self.toggle_full_screen)
-        self.fs = None
 
         self.new_canvas_action = QAction("New Canvas", self, shortcut='Ctrl+N')
         self.new_canvas_action.triggered.connect(self.new_canvas)
-        self.fs = None
+
+        self.new_window_action = QAction("Open in New Window", self, shortcut='Ctrl+T')
+        self.new_window_action.triggered.connect(self.open_new_window)
         
         self._menus = []
-        self._actions = [self.new_canvas_action, self.full_screen_action]
+        self._actions = [self.new_canvas_action, self.new_window_action, self.full_screen_action, ]
         self.ctx_menu_items = {'menus':self._menus, 'actions':self._actions}
         
     def saveState(self, settings):
@@ -211,12 +215,32 @@ class PlotWidget(QtOpenGL.QGLWidget):
             return name
                 
     @QtCore.Slot()
+    def open_new_window(self):
+        '''
+        Toggle in and out of full screen mode.
+        '''
+        window = PlotWidget(aspect=self.aspect, name=self.objectName(), share=self)
+        self.windows.append(window)
+            
+        window._current_canvas = self._current_canvas
+        for canvas in self._canvases.values():
+            new_canvas = canvas.copy()
+            window.add_canvas(new_canvas)
+        
+        window._view_state = self._view_state
+        window._cl_context = self._cl_context
+        
+        window.show()
+            
+        
+    @QtCore.Slot()
     def toggle_full_screen(self):
         '''
         Toggle in and out of full screen mode.
         '''
         if self.fs is not None and self.fs.isVisible():
             self.show()
+            self.resizeGL(self.size().width(), self.size().height())
             self.fs.hide()
         else:
             if self.fs is None:
@@ -226,13 +250,13 @@ class PlotWidget(QtOpenGL.QGLWidget):
                 
             fs._current_canvas = self._current_canvas
             for canvas in self._canvases.values():
-                fs.add_canvas(canvas)
+                fs.add_canvas(canvas.copy())
             
             fs._view_state = self._view_state
             fs._cl_context = self._cl_context
             
-            self.hide()
             fs.showFullScreen()
+            fs.resizeGL(fs.size().width(), fs.size().height())
     
     def _get_plot_position(self):
         return self._plot_position

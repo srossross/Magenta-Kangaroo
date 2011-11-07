@@ -178,6 +178,19 @@ class Canvas(QWidget):
 
         self.current_tool = 'pan'
         
+    def copy(self):
+        new_canvas = Canvas(self.parent(), self.aspect, self.objectName(), self.background_color)
+        
+        for plot in self.plots:
+            new_canvas.add_plot(plot)
+            
+        new_canvas.markers = self.markers
+            
+        new_canvas._bounds = self._bounds
+        new_canvas._initial_bounds = self._initial_bounds
+
+        return new_canvas
+        
     def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=None):
 
         QWidget.__init__(self, parent)
@@ -186,7 +199,6 @@ class Canvas(QWidget):
 
         self.aspect = aspect
         self.plots = []
-        self._cl_context = None
     
         self._bounds = QtCore.QRectF(-1, -1, 2, 2)
         self._initial_bounds = QtCore.QRectF(-1, -1, 2, 2)

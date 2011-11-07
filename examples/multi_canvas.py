@@ -67,7 +67,9 @@ def create_image_canvas(plot):
     cl_data = Buffer(cl_context, mem_flags.READ_WRITE, data.nbytes)
 
     import pylab
-    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
+#    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
+    cdict = pylab.cm.gray._segmentdata #@UndefinedVariable
+
     pipe_segment = ColorMap(gl_context, cl_context, cdict,
                                      cl_data, implot.texture.cl_image,
                                      shape, clim=(np.float32(data.min()), np.float32(data.max())))
@@ -124,6 +126,7 @@ def main(args):
     plot_on_canvas(canvas)
     
     settings = QtCore.QSettings("Enthought", "multi_canvas")
+#    settings = QtCore.QSettings("plot.ini", QtCore.QSettings.IniFormat)
     
     main = QMainWindow()
     
@@ -152,7 +155,7 @@ def main(args):
     
     app.setStyleSheet("""
     Canvas {
-        background : blue;
+        background : white;
     }
     
     LinePlot#Plot1 {
