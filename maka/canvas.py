@@ -7,65 +7,21 @@ from __future__ import division
 from OpenGL import GL, GLU
 from PIL.Image import fromarray #@UnresolvedImport
 from PySide import QtCore, QtGui
-from PySide.QtCore import Qt, QObject, QPoint, QPointF, Property, QPropertyAnimation
-from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QToolBar, QPalette
+from PySide.QtCore import Qt, QEvent
+from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QPalette
 from PySide.QtGui import QWidget
 from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
 import numpy as np
 import os
-from maka.tool import PanTool, SelectionTool, ZoomTool
+from maka.controllers import PanControl, SelectionControl, ZoomControl
+from maka.marker_animation import MarkerAnimation
+from maka.canvas_base import CanvasBase
 #from PySide.QtGui import *
 
 SIZE = 100
 
-class MarkerAnimation(QObject):
-    '''
-    Class to animate placement of the marker.
-    '''
-    def __init__(self, name, drop_point, canvas):
-        super(MarkerAnimation, self).__init__(parent=canvas)
-        self.name = name
-        
-        end_point = canvas.mapToGL(drop_point)
-        start_point = canvas.mapToGL(QPointF(drop_point.x(), drop_point.y() - 32))
-        canvas.markers[name] = start_point
-        
-        self.animation = anim = QPropertyAnimation(self, 'pos')
-        anim.setDuration(100)
-        anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
-        
-        anim.setStartValue(start_point)
-        anim.setEndValue(end_point)
 
-    def _get_pos(self):
-        return self.parent().markers[self.name]
-    
-    def _set_pos(self, value):
-        self._pos = value
-        self.parent().markers[self.name] = value
-        self.parent().require_redraw.emit()
-
-    pos = Property(QPointF, _get_pos, _set_pos)
-    
-    def start(self):
-        self.animation.start()
-    
-    def accept(self, name):
-        '''
-        The marker will be permanent 
-        '''
-        if self.name != name:
-            old_name = self.name
-            self.parent().markers[name] = QPointF(self.parent().markers[old_name])
-            self.name = name
-            del self.parent().markers[old_name]
-            self.parent().require_redraw.emit()
-    
-    def reject(self):
-        self.animation.stop()
-        del self.parent().markers[self.name]
-
-class Canvas(QWidget):
+class Canvas(CanvasBase):
     '''
     Canvas for 2D plotting. add this to a PlotWidget
     
@@ -132,52 +88,6 @@ class Canvas(QWidget):
         
         return screen_point
 
-
-    def _init_background_color(self, background_color):
-        '''
-        Initialize the background color and associated actions.
-        
-        :param background_color: initial color. note that style overrides this selection.
-        '''
-        
-        if background_color is not None:
-            self.background_color = background_color
-#            self.palette().setColor(QPalette.Window, background_color)
-        
-        self.bg_color_menu = bg_color_menu = QMenu("Background Color")
-        
-        self._color_actions = [
-            SAction("white", self, QColor(255, 255, 255)),
-            SAction("black", self, QColor(0, 0, 0)),
-            SAction("grey", self, QColor(128, 128, 128)),
-            SAction("Other ...", self, None)]
-        
-        for action in self._color_actions:
-            if action is self._color_actions[-1]:
-                bg_color_menu.addSeparator()
-            bg_color_menu.addAction(action)
-            action.setCheckable(True)
-            action.triggered_data.connect(self.change_bg_color)
-
-
-    def _init_tools(self):
-        '''
-        Initialize interaction tools and associated actions. 
-        '''
-        self._current_tool = None
-        
-        self.tools = {'pan':PanTool('pan', key=Qt.Key_P, parent=self.parent()),
-                      'select':SelectionTool('select', key=Qt.Key_S, parent=self.parent()),
-                      'zoom':ZoomTool('zoom', key=Qt.Key_Z, parent=self.parent())}
-        
-        self.tool_menu = QMenu("Interaction")
-        
-        for tool in self.tools.values():
-            tool.select_action.toggled_data.connect(self.set_tool)
-            self.tool_menu.addAction(tool.select_action)
-
-        self.current_tool = 'pan'
-        
     def copy(self):
         new_canvas = Canvas(self.parent(), self.aspect, self.objectName(), self.background_color)
         
@@ -218,29 +128,14 @@ class Canvas(QWidget):
 
         self.markers = {}
         
-        self.render_target = None
-        
         self._init_background_color(background_color)
         
-        self._init_tools()
+        controllers = [PanControl('pan', key=Qt.Key_P, canvas=self),
+                       SelectionControl('select', key=Qt.Key_S, canvas=self),
+                       ZoomControl('zoom', key=Qt.Key_Z, canvas=self)]
         
-    @property
-    def background_color(self):
-        '''
-        get/set the background_color from the palette
-        '''
-        return self.palette().color(QPalette.Window)
+        self._init_controllers(controllers, 'pan')
         
-    @background_color.setter
-    def background_color(self, color):
-        '''
-        get/set the background_color from the palette
-        '''
-        palette = self.palette()
-        palette.setColor(QPalette.Window, color)
-        self.setPalette(palette)
-        
-    
     def saveState(self, settings):
         '''
         Save this canvases state. 
@@ -292,62 +187,25 @@ class Canvas(QWidget):
 
         settings.endGroup()
     
-    tool_changed = QtCore.Signal(bool, str)
+    controller_changed = QtCore.Signal(bool, str)
     
     @QtCore.Slot(bool, object)
-    def set_tool(self, enabled, name):
+    def set_controller(self, enabled, name):
         '''
-        Set the current tool 
+        Set the current controller 
         '''
-        self._current_tool = name
+        self._current_controller = name
         
-        for tool in self.tools.values():
-            tool.select_action.blockSignals(True) # Otherwise stackoverflow
-            enabled = tool.objectName() == name
-            tool.select_action.setChecked(enabled)
+        for controller in self.controllers.values():
+            controller.select_action.blockSignals(True) # Otherwise stackoverflow
+            enabled = controller.objectName() == name
+            controller.select_action.setChecked(enabled)
             if enabled: 
-                tool.enable(self.parent())
+                controller.enable(self.parent())
             else:
-                tool.disable(self.parent())
+                controller.disable(self.parent())
             
-            tool.select_action.blockSignals(False)
-
-        
-    def _get_current_tool(self):
-        return self._current_tool
-    
-    def _set_current_tool(self, value):
-        self.set_tool(True, value)
-        
-    current_tool = QtCore.Property(str, _get_current_tool, _set_current_tool)
-            
-    def enable(self):
-        self.tools[self.current_tool].enable(self.parent())
-        
-    @QtCore.Slot(bool, object)
-    def change_bg_color(self, color=None):
-        '''
-        Cange the background color prompting with a color dialog if param `color` is None. 
-        '''
-        if color is None:
-            color = QColorDialog.getColor(self.background_color)
-            
-        if not color.isValid():
-            return
-         
-        have_color = False
-        for action in self._color_actions:
-            action.setChecked(False)
-            if action.data == color:
-                action.setChecked(True)
-                have_color = True
-                
-        if not have_color:
-            other = self._color_actions[-1]
-            other.setChecked(True)
-            
-        self.background_color = color
-#        self.req
+            controller.select_action.blockSignals(False)
 
     @property
     def markers_visible(self):
@@ -395,29 +253,6 @@ class Canvas(QWidget):
         else:
             self.marker_animation.reject()
         
-    @QtCore.Slot(bool)
-    def save_as(self, checked=False):
-        '''
-        FIXME: save to an image
-        '''
-        self.makeCurrent()
-        
-        pixmap = GL.glReadPixels(0, 0, 1000, 1000, GL.GL_BGRA, GL.GL_UNSIGNED_BYTE)
-        
-        a = np.frombuffer(pixmap, dtype=np.uint8)
-        b = a.reshape([1000, 1000, 4])
-        
-        path = os.path.expanduser('~')
-        fileName = QtGui.QFileDialog.getSaveFileName(self, "Save Image", path, "Image Files (*.png *.jpg *.bmp, *.tiff)")
-        
-        image = fromarray(b, mode='RGBA')
-        
-        image.save(open(fileName[0], 'w'),)
-        
-    @property
-    def tool(self):
-        return self.tools[self.current_tool]
-        
     def add_plot(self, plot):
         '''
         Add a plot to the canvas
@@ -428,13 +263,6 @@ class Canvas(QWidget):
         
         if plot.parent() is None:
             plot.setParent(self)
-
-    @QtCore.Slot(QtCore.QObject)
-    def reqest_redraw(self, plot):
-        '''
-        
-        '''
-        self.require_redraw.emit()
 
     def resizeGL(self, w, h):
         '''
@@ -472,45 +300,6 @@ class Canvas(QWidget):
             
         GL.glOrtho(left, right, top, bottom, near, far)
         
-    def update_render_target(self, w, h):
-        '''
-        Create a texture that maps to the pixels of the screen
-        '''
-        if self.render_target is not None:
-            GL.glDeleteTextures([self.render_target])
-            
-        self.render_target = GL.glGenTextures(1)
-        self.render_target_size = w, h
-        
-        with gl_enable(GL.GL_TEXTURE_2D):
-            GL.glBindTexture(GL.GL_TEXTURE_2D, self.render_target)
-            GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB, w, h, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, None)
-            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
-            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
-            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP);
-            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP);
-
-    def render_to_texture(self):
-        '''
-        Render the current state to a texture.
-        '''
-        with matrix(GL.GL_PROJECTION), matrix(GL.GL_MODELVIEW):
-            GL.glMatrixMode(GL.GL_PROJECTION)
-            GL.glLoadIdentity()
-            GL.glMatrixMode(GL.GL_MODELVIEW)
-            GL.glLoadIdentity()
-            self.paintGL()
-        
-        GL.glFlush()
-        
-        w, h = self.render_target_size
-        with gl_enable(GL.GL_TEXTURE_2D):
-        
-            GL.glBindTexture(GL.GL_TEXTURE_2D, self.render_target)
-            GL.glCopyTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA, 0, 0, w, h, 0)
-            
-        return self.render_target
-
     def paintGL(self):
         '''
         Draw the current scene to OpenGL
@@ -535,7 +324,7 @@ class Canvas(QWidget):
                 
             self.draw_markers()
             
-        self.tool._paintGL(self)
+        self.controller._paintGL(self)
         
     def draw_markers(self):
         '''
@@ -603,16 +392,18 @@ class Canvas(QWidget):
                 
     def keyPressEvent(self, event):
         
-        if event.key() == Qt.Key_R:
+        if event.key() == Qt.Key_Escape:
+            event.ignore()
+            return 
+        
+        elif event.key() == Qt.Key_R:
             self.setBounds(self._initial_bounds, animate=True)
         else:
-
-            for tool_name, tool in self.tools.items():
-                if tool.key == event.key():
-                    self.current_tool = tool_name
+            for controller_name, controller in self.controllers.items():
+                if controller.key == event.key():
+                    self.current_controller = controller_name
             return
         
-    
     def toolTipEvent(self, event):
         
         glob_point = event.globalPos()
@@ -628,15 +419,15 @@ class Canvas(QWidget):
     
     def mousePressEvent(self, event):
         
-        self.tool._mousePressEvent(self, event)
+        self.controller._mousePressEvent(self, event)
             
     def mouseReleaseEvent(self, event):
         
-        self.tool._mouseReleaseEvent(self, event)
+        self.controller._mouseReleaseEvent(self, event)
     
     def mouseMoveEvent(self, event):
         
-        self.tool._mouseMoveEvent(self, event)
+        self.controller._mouseMoveEvent(self, event)
         
     def move_to_marker(self, name):
         '''
@@ -672,9 +463,6 @@ class Canvas(QWidget):
         
         print "set_current_canvas", canvas_name
         self.parent().set_current_canvas(canvas_name)
-            
-            
-
 
     def _ctx_markers(self, event, menu):
         '''
@@ -755,11 +543,10 @@ class Canvas(QWidget):
             for action in self.parent().ctx_menu_items['actions']:
                 menu.addAction(action)
 
-                
     def contextMenuEvent(self, event):
         menu = QMenu()
         
-        menu.addMenu(self.tool_menu)
+        menu.addMenu(self.controller_menu)
         
         self._ctx_markers(event, menu)
         
@@ -773,8 +560,6 @@ class Canvas(QWidget):
         event.accept()
         
         self.require_redraw.emit()
-    
-    require_redraw = QtCore.Signal() 
     
     def mapToGlobal(self, pos):
         return self.parent().mapToGlobal(pos)

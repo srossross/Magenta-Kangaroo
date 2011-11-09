@@ -17,6 +17,8 @@ class Texture2D(object):
         self.shape = shape
 
         devices = cl_ctx.get_info(cl.context_info.DEVICES)
+        
+        print "devices", devices
         device = devices[0]
 
         self.have_image_support = share and device.get_info(cl.device_info.IMAGE_SUPPORT)

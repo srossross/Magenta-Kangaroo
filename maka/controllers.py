@@ -7,25 +7,25 @@ Created on Oct 15, 2011
 from OpenGL import GL, GLU
 from PySide import QtCore
 from PySide.QtCore import Qt, QPropertyAnimation
-from PySide.QtGui import QCursor
+from PySide.QtGui import QWidget, QCursor
 from maka.util import gl_begin, matrix, gl_enable, gl_disable, SAction
 
 from time import time
 from numpy import mean
 SIZE = 100
 
-class Tool(QtCore.QObject):
+class NoControl(QtCore.QObject):
     '''
     Base tool class.
     '''
-    def __init__(self, name, key, parent=None):
-        QtCore.QObject.__init__(self, parent=parent)
+    def __init__(self, name, key, canvas=None):
+        QtCore.QObject.__init__(self, parent=canvas)
         
         self.key = key
         
         self.setObjectName(name)
         
-        self.select_action = SAction(name, parent, name)
+        self.select_action = SAction(name, canvas, name)
         self.select_action.setCheckable(True)
         self.select_action.setChecked(False)
         self._enabled = False
@@ -49,8 +49,7 @@ class Tool(QtCore.QObject):
         if self._enabled:
             self._enabled = False
             
-class PanTool(Tool):
-    
+class PanControl(NoControl):
     
     def enable(self, plot_widget):
         if not self._enabled:
@@ -68,8 +67,8 @@ class PanTool(Tool):
         
     delta = QtCore.Property(QtCore.QPointF, _get_delta, _set_delta)
     
-    def __init__(self, name, key, parent=None):
-        Tool.__init__(self, name, key, parent)
+    def __init__(self, name, key, canvas=None):
+        NoControl.__init__(self, name, key, canvas)
         
         self._delta = QtCore.QPointF(0, 0)
         self._deltas = [None, None, None, None, None]
@@ -146,7 +145,7 @@ class PanTool(Tool):
         
             
 
-class ZoomTool(Tool):
+class ZoomControl(NoControl):
     start_point = QtCore.QPointF(0, 0)
     current_point = QtCore.QPointF(0, 0)
     
@@ -287,7 +286,7 @@ class ZoomTool(Tool):
             self._enabled = True
 
 
-class SelectionTool(Tool):
+class SelectionControl(NoControl):
     
     def _mouseMoveEvent(self, canvas, event):
         with matrix(GL.GL_MODELVIEW):
