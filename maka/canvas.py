@@ -103,7 +103,7 @@ class Canvas(CanvasBase):
         
     def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=None):
 
-        QWidget.__init__(self, parent)
+        super(Canvas, self).__init__(parent, name , background_color)
         
         self.setObjectName(name)
 
@@ -127,8 +127,6 @@ class Canvas(CanvasBase):
         self._save = False
 
         self.markers = {}
-        
-        self._init_background_color(background_color)
         
         controllers = [PanControl('pan', key=Qt.Key_P, canvas=self),
                        SelectionControl('select', key=Qt.Key_S, canvas=self),
@@ -187,26 +185,6 @@ class Canvas(CanvasBase):
 
         settings.endGroup()
     
-    controller_changed = QtCore.Signal(bool, str)
-    
-    @QtCore.Slot(bool, object)
-    def set_controller(self, enabled, name):
-        '''
-        Set the current controller 
-        '''
-        self._current_controller = name
-        
-        for controller in self.controllers.values():
-            controller.select_action.blockSignals(True) # Otherwise stackoverflow
-            enabled = controller.objectName() == name
-            controller.select_action.setChecked(enabled)
-            if enabled: 
-                controller.enable(self.parent())
-            else:
-                controller.disable(self.parent())
-            
-            controller.select_action.blockSignals(False)
-
     @property
     def markers_visible(self):
         return self.show_markers_act.isChecked()
@@ -391,7 +369,6 @@ class Canvas(CanvasBase):
                 
                 
     def keyPressEvent(self, event):
-        
         if event.key() == Qt.Key_Escape:
             event.ignore()
             return 
@@ -402,7 +379,9 @@ class Canvas(CanvasBase):
             for controller_name, controller in self.controllers.items():
                 if controller.key == event.key():
                     self.current_controller = controller_name
-            return
+                    return
+        
+        event.ignore()
         
     def toolTipEvent(self, event):
         
@@ -415,18 +394,16 @@ class Canvas(CanvasBase):
                 QtGui.QToolTip.showText(glob_point, name, self.parent(), rect)
                 return True
         
+        event.ignore()
         return False
     
     def mousePressEvent(self, event):
-        
         self.controller._mousePressEvent(self, event)
             
     def mouseReleaseEvent(self, event):
-        
         self.controller._mouseReleaseEvent(self, event)
     
     def mouseMoveEvent(self, event):
-        
         self.controller._mouseMoveEvent(self, event)
         
     def move_to_marker(self, name):

@@ -31,13 +31,13 @@ class NoControl(QtCore.QObject):
         self._enabled = False
         
     def _mousePressEvent(self, canvas, event):
-        pass
+        event.ignore()
 
     def _mouseMoveEvent(self, canvas, event):
-        pass
+        event.ignore()
 
     def _mouseReleaseEvent(self, canvas, event):
-        pass
+        event.ignore()
     
     def _paintGL(self, canvas):
         pass
@@ -87,6 +87,8 @@ class PanControl(NoControl):
             self.plot_widget.setCursor(Qt.ClosedHandCursor)
             self.animation.stop()
             self.orig = canvas.mapToGL(event.pos())
+        else:
+            event.ignore()
 
     def _mouseMoveEvent(self, canvas, event):
         
@@ -109,6 +111,7 @@ class PanControl(NoControl):
         else:
             self._delta = QtCore.QPointF(0, 0)
             self._time = 0
+            event.ignore()
             
             
     def _mouseReleaseEvent(self, canvas, event):
@@ -118,6 +121,7 @@ class PanControl(NoControl):
         
         if len(deltas) < 2:
             return 
+        
         self._deltas = [None] * 5
         
         fps = 60
@@ -155,6 +159,7 @@ class ZoomControl(NoControl):
 
         if (not (event.buttons() & Qt.LeftButton)) or (event.modifiers() & Qt.ControlModifier):
             self._paint = False
+            event.ignore()
             return
         
         self._paint = True
@@ -181,6 +186,7 @@ class ZoomControl(NoControl):
         
         if not (event.buttons() & Qt.LeftButton):
             self._paint = False
+            event.ignore()
             return 
         
         if self._paint:
@@ -190,7 +196,8 @@ class ZoomControl(NoControl):
             if event.modifiers() & Qt.ShiftModifier:
                 self.modify(canvas, start, curr)
                     
-            self.current_point = curr    
+            self.current_point = curr
+            
         canvas.require_redraw.emit()
     
     def _mouseReleaseEvent(self, canvas, event):

@@ -8,7 +8,8 @@ from PySide.QtGui import QAction, QMenu
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
 import numpy as np
-from maka.util import gl_begin, gl_enable, gl_disable
+from maka.util import gl_begin, gl_enable, gl_disable, SAction
+from maka.image.color_map import COLORMAPS
 
 class Texture2D(object):
     def __init__(self, cl_ctx, texture, shape, hostbuf=None, share=True):
@@ -81,8 +82,6 @@ class ImagePlot(QtCore.QObject):
         
         self.interp = interp
         with self.texture:
-#        GL.glEnable(GL.GL_TEXTURE_2D);
-#        GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
             GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, interp)
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
@@ -98,14 +97,36 @@ class ImagePlot(QtCore.QObject):
         
         self._actions = {'visible': self._visible_act}
         
+        self._init_colormaps()
+        
+    def _init_colormaps(self):
         
         self._colormap_menu = colormap_menu = QMenu('Color Map')
         self._menus = {'colormap': colormap_menu}
         
-        jet_action = QAction('jet', self)
+        self._colormap_actions = []
         
+        for name, cdict in COLORMAPS.items():
+            caction = SAction(name, self, data=cdict)
+            caction.setCheckable(True)
+            caction.triggered_data.connect(self.colormap_triggered)
+            self._colormap_actions.append(caction)
+            
+        self._color_map = None
         
-        colormap_menu.addActions([jet_action])
+        colormap_menu.addActions(self._colormap_actions)
+        
+    @QtCore.Slot()
+    def colormap_triggered(self, cdict):
+        self.color_map.set_cdict(cdict)
+        self.color_map.compute(self.queue)
+        
+        for action in self._colormap_actions:
+            if cdict is action.data:
+                action.setChecked(True)
+            else:
+                action.setChecked(False)
+        
         
     @property
     def visible(self):
@@ -115,10 +136,22 @@ class ImagePlot(QtCore.QObject):
     def visible(self, value):
         self._visible_act.setChecked(bool(value))
     
+    @property
+    def color_map_name(self):
+        for cname, item in COLORMAPS.items():
+            if self.color_map._cdict is item:
+                color_map_name = cname
+                break
+        else:
+            color_map_name = None
+            
+        return color_map_name
+        
     def saveState(self, settings):
         settings.beginGroup(str(self.objectName()))
         
         settings.setValue('visible', self.visible)
+        settings.setValue('color_map', self.color_map_name)
         
         settings.endGroup()
 
@@ -128,12 +161,39 @@ class ImagePlot(QtCore.QObject):
 
         self.visible = settings.value('visible', self.visible)
         
+        color_map_name = settings.value('color_map', None)
+        
+        print "color_map_name", color_map_name
+        
+        cdict = COLORMAPS.get(color_map_name)
+        
+        print cdict
+        if cdict is not None:
+            self.colormap_triggered(cdict)
+        
         settings.endGroup()
+    
+    @property
+    def color_map(self):
+        return self._color_map
+    
+    @color_map.setter
+    def color_map(self, value):
+        self._color_map = value
+    
+        for action in self._colormap_actions:
+            if self._color_map._cdict is action.data:
+                action.setChecked(True)
+            else:
+                action.setChecked(False)
 
     def process(self):
 
         for segment in self._pipe_segments:
             segment.compute(self.queue)
+            
+        if self.color_map is not None:
+            self.color_map.compute(self.queue)
 
         return self.queue
 

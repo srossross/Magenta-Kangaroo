@@ -8,6 +8,30 @@ import pyopencl as cl #@UnresolvedImport
 from maka.cl_pipe import ComputationalPipe
 import numpy as np
 
+COLORMAPS = dict(
+    gray={'blue': ((0.0, 0, 0), (1.0, 1, 1)),
+            'green': ((0.0, 0, 0), (1.0, 1, 1)),
+            'red': ((0.0, 0, 0), (1.0, 1, 1))},
+    
+    jet={'blue': ((0.0, 0.5, 0.5),
+      (0.11, 1, 1),
+      (0.34, 1, 1),
+      (0.65, 0, 0),
+      (1, 0, 0)),
+     'green': ((0.0, 0, 0),
+      (0.125, 0, 0),
+      (0.375, 1, 1),
+      (0.64, 1, 1),
+      (0.91, 0, 0),
+      (1, 0, 0)),
+     'red': ((0.0, 0, 0), (0.35, 0, 0), (0.66, 1, 1), (0.89, 1, 1), (1, 0.5, 0.5))},
+                 
+    copper={'blue': ((0.0, 0.0, 0.0), (1.0, 0.4975, 0.4975)),
+            'green': ((0.0, 0.0, 0.0), (1.0, 0.7812, 0.7812)),
+            'red': ((0.0, 0.0, 0.0), (0.809524, 1.0, 1.0), (1.0, 1.0, 1.0))}
+                 
+                 )
+
 class ColorMap(ComputationalPipe):
     src = """
     uchar map_color(float norm, __global const float4* cmap);
@@ -69,24 +93,35 @@ class ColorMap(ComputationalPipe):
     """
 
     def __init__(self, gl_context, cl_context, cdict, cl_data, cl_image, shape, clim):
-        self._cdict = cdict
+        
         self.cl_data = cl_data
         self.cl_image = cl_image
 
         kernel = cl.Program(cl_context, self.src).build().colormap
 
-        self._cl_maps = {'red': self.create_cl_map(cl_context, 'red', cdict['red']),
-                         'blue': self.create_cl_map(cl_context, 'blue', cdict['blue']),
-                          'green':self.create_cl_map(cl_context, 'green', cdict['green']),
-                          }
 
+        self._cdict = cdict
+        self._cl_maps = {'red': self.create_cl_map(cl_context, cdict['red']),
+                         'blue': self.create_cl_map(cl_context, cdict['blue']),
+                          'green':self.create_cl_map(cl_context, cdict['green']),
+                          }
 
         ComputationalPipe.__init__(self, gl_context, cl_context, shape, None, kernel,
                                    self.cl_data, self.cl_image,
                                    self._cl_maps['red'], self._cl_maps['blue'], self._cl_maps['green'],
                                    clim[0], clim[1])
+    
+    def set_cdict(self, cdict):
 
-    def create_cl_map(self, cl_context, color, cmap):
+        self._cdict = cdict
+        self._cl_maps = {'red': self.create_cl_map(self.cl_context, cdict['red']),
+                         'blue': self.create_cl_map(self.cl_context, cdict['blue']),
+                          'green':self.create_cl_map(self.cl_context, cdict['green']),
+                          }
+
+        self.kernel_args[2:5] = self._cl_maps['red'], self._cl_maps['blue'], self._cl_maps['green'] 
+        
+    def create_cl_map(self, cl_context, cmap):
 
         data = np.array([list(item) + [0] for item in cmap], dtype=np.float32)
         data[-1, -1] = 1

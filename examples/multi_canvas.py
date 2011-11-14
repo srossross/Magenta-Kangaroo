@@ -7,6 +7,7 @@ Created on Oct 19, 2011
 
 import sys
 from PySide import QtCore, QtGui, QtOpenGL
+from PySide.QtCore import Qt
 from PySide.QtGui import QColor, QMainWindow, QMenu, QMenuBar, QWidget, QSlider, QVBoxLayout
 
 from pyopencl import Program, Buffer, mem_flags, enqueue_copy #@UnresolvedImport
@@ -17,7 +18,8 @@ from maka.util import bring_to_front, execute
 from maka.plot_widget import PlotWidget
 from maka.canvas import Canvas
 from maka.image.implot import ImagePlot, Interp
-from maka.image.color_map import ColorMap
+from maka.image.color_map import ColorMap, COLORMAPS
+from maka.scene import Scene
 
 
 n_vertices = 100
@@ -61,24 +63,23 @@ def create_image_canvas(plot):
     data = get_data()
     
     shape = list(data.shape)
+    
+    print 'shape', shape
 
     implot = ImagePlot(gl_context, cl_context, shape, name='Lena', share=False, interp=Interp.NEAREST)
 
     cl_data = Buffer(cl_context, mem_flags.READ_WRITE, data.nbytes)
 
-    import pylab
-#    cdict = pylab.cm.jet._segmentdata #@UndefinedVariable
-    cdict = pylab.cm.gray._segmentdata #@UndefinedVariable
 
-    pipe_segment = ColorMap(gl_context, cl_context, cdict,
-                                     cl_data, implot.texture.cl_image,
-                                     shape, clim=(np.float32(data.min()), np.float32(data.max())))
+    pipe_segment = ColorMap(gl_context, cl_context, COLORMAPS['gray'],
+                            cl_data, implot.texture.cl_image,
+                            shape, clim=(np.float32(data.min()), np.float32(data.max())))
     
     enqueue_copy(implot.queue, cl_data, data)
 
     implot.queue.finish()
 
-    implot._pipe_segments.append(pipe_segment)
+    implot.color_map = pipe_segment
 
     implot.process()
 
@@ -104,6 +105,11 @@ def plot_on_canvas(canvas):
     plot2.add_pipe_segment(pipe_segment)
     canvas.add_plot(plot2)
 
+
+def create_3dScene(plot_widget):
+    scene = Scene(plot_widget, '3D', background_color=Qt.darkGray)
+    return scene
+
 def main(args):
     app = QtGui.QApplication(args)
     
@@ -120,8 +126,11 @@ def main(args):
     
     image_canvas = create_image_canvas(plot_widget)
     
+    scene = create_3dScene(plot_widget)
+    
     plot_widget.add_canvas(canvas)
     plot_widget.add_canvas(image_canvas)
+    plot_widget.add_canvas(scene)
     
     plot_on_canvas(canvas)
     

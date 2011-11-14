@@ -18,7 +18,6 @@ from maka.controllers import NoControl
 
 SIZE = 100
 
-
 class CanvasBase(QWidget):
     '''
     Canvas for 2D plotting. add this to a PlotWidget
@@ -76,7 +75,7 @@ class CanvasBase(QWidget):
     def copy(self):
         pass
         
-    def __init__(self, parent, name, background_color=None):
+    def __init__(self, parent, name, background_color):
 
         QWidget.__init__(self, parent)
         
@@ -87,8 +86,10 @@ class CanvasBase(QWidget):
         
         self._init_background_color(background_color)
         
-        self._init_controllers()
-        
+    
+    def projection(self, screen_aspect, near= -1, far=1):
+        GL.glOrtho(-1, 1, -1, 1, near, far)
+            
     MY_EVENTS = [QEvent.MouseMove, QEvent.KeyPress, QEvent.KeyRelease, QEvent.MouseButtonDblClick, QEvent.MouseButtonPress,
                  QEvent.MouseButtonRelease, QEvent.ContextMenu,
                  ]
@@ -180,6 +181,26 @@ class CanvasBase(QWidget):
     @property
     def controller(self):
         return self.controllers[self.current_controller]
+
+    controller_changed = QtCore.Signal(bool, str)
+    
+    @QtCore.Slot(bool, object)
+    def set_controller(self, enabled, name):
+        '''
+        Set the current controller 
+        '''
+        self._current_controller = name
+        
+        for controller in self.controllers.values():
+            controller.select_action.blockSignals(True) # Otherwise stackoverflow
+            enabled = controller.objectName() == name
+            controller.select_action.setChecked(enabled)
+            if enabled: 
+                controller.enable(self.parent())
+            else:
+                controller.disable(self.parent())
+            
+            controller.select_action.blockSignals(False)
         
     @QtCore.Slot(QtCore.QObject)
     def reqest_redraw(self, plot):
@@ -216,6 +237,8 @@ class CanvasBase(QWidget):
         with matrix(GL.GL_PROJECTION), matrix(GL.GL_MODELVIEW):
             GL.glMatrixMode(GL.GL_PROJECTION)
             GL.glLoadIdentity()
+            screen_aspect = self.render_target_size[0] / self.render_target_size[1]
+            self.projection(screen_aspect)
             GL.glMatrixMode(GL.GL_MODELVIEW)
             GL.glLoadIdentity()
             self.paintGL()

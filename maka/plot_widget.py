@@ -4,37 +4,44 @@ Created on Oct 18, 2011
 @author: sean
 '''
 from __future__ import division
-from PySide import QtOpenGL, QtGui, QtCore
+from PySide import QtOpenGL, QtCore
 from collections import OrderedDict
-from PySide.QtGui import QPixmap, QColor, QFont, QFontMetrics, QToolBar, QAction, QMenu, QInputDialog, QWhatsThis
-from PySide.QtCore import Qt, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
-from OpenGL import GL, GLU, GLUT
+from PySide.QtGui import QPixmap, QFont, QFontMetrics, QAction, QMenu, QInputDialog
+from PySide.QtCore import Qt, QPropertyAnimation, QSequentialAnimationGroup
+from OpenGL import GL, GLU
 from maka.canvas import Canvas
 from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
 import numpy as np
-import os
 import pyopencl as cl #@UnresolvedImport
 from maka.util import gl_begin, matrix, gl_enable, gl_disable
-from PySide import QtCore
-from numpy import clip
 from contextlib import contextmanager
 
-def draw_plot():
+def draw_plot(trans, screen_aspect):
     '''
-    Draw a unit quad (-1,1,-1,1) with a openGL texture.  
+    Draw a unit quad (-1,1,-1,1) with a openGL texture.
+    trans == 0 if coverflow where the aspect is 1  
+    trans == 1 if coverflow where the aspect is the screen coords  
     '''
     
+    x = .5
+    y = .5
+    
+    if screen_aspect > 1:
+        x = .5 / (1.0 + (1 - trans) * (screen_aspect - 1.0))
+    else:
+        y = .5 / (1.0 + (1 - trans) * ((1.0 / screen_aspect) - 1.0))
+    
     with gl_begin(GL.GL_QUADS):
-        GL.glTexCoord2f(0, 0)
+        GL.glTexCoord2f(0.5 - x, 0.5 - y)
         GL.glVertex(-1, -1, 0)
         
-        GL.glTexCoord2f(1, 0)
+        GL.glTexCoord2f(0.5 + x, 0.5 - y)
         GL.glVertex(1, -1, 0)
 
-        GL.glTexCoord2f(1, 1)
+        GL.glTexCoord2f(0.5 + x, 0.5 + y)
         GL.glVertex(1, 1, 0)
 
-        GL.glTexCoord2f(0, 1)
+        GL.glTexCoord2f(0.5 - x, 0.5 + y)
         GL.glVertex(-1, 1, 0)
 
 def draw_plot_reflection():
@@ -496,7 +503,8 @@ class PlotWidget(QtOpenGL.QGLWidget):
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
         
-        self.current_canvas.projection(self.size().width() / self.size().height(), 0.15, DISTANCE + z_position)
+#        self.current_canvas.projection(self.size().width() / self.size().height(), 0.15, DISTANCE + z_position)
+        GL.glOrtho(-1, 1, -1, 1, 0.15, DISTANCE + z_position)
 
         projection_2 = np.array(GL.glGetDouble(GL.GL_PROJECTION_MATRIX)) 
         GL.glLoadIdentity()
@@ -528,7 +536,10 @@ class PlotWidget(QtOpenGL.QGLWidget):
             
         pass
         
-        
+    @property
+    def screen_aspect(self):
+        return self.size().width() / self.size().height()
+    
     def draw_coverflow2(self):
         '''
         Draw the coverflow for selection rendering / picking 
@@ -556,9 +567,19 @@ class PlotWidget(QtOpenGL.QGLWidget):
                 GL.glRotate(current_angle, 0, 1, 0)
                 
                 GL.glPushName(i)
-                draw_plot()
+                draw_plot(self.perspective_transition, self.screen_aspect)
                 GL.glPopName()
                 
+
+    def draw_title_text(self):
+        font = QFont("Helvetica", 24)
+        font.setBold(True)
+        fm = QFontMetrics(font)
+        fw = fm.width(self.current_canvas_id)
+        fh = fm.height()
+        GL.glColor(1, 1, 1, 1)
+        self.renderText(self.size().width() / 2 - fw / 2, self.size().height() - fh, self.current_canvas_id, font)
+
     def draw_coverflow(self):
         '''
         Draw the coverflow 
@@ -572,18 +593,6 @@ class PlotWidget(QtOpenGL.QGLWidget):
             GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
             
             GL.glDepthMask(True)
-            
-            font = QFont("Helvetica", 24)
-    
-            font.setBold(True)  
-            
-            fm = QFontMetrics(font)
-            fw = fm.width(self.current_canvas_id)
-            fh = fm.height()
-            
-            GL.glColor(1, 1, 1, 1)
-            self.renderText(self.size().width() / 2 - fw / 2, self.size().height() - fh, self.current_canvas_id, font)
-            
             global_pos = self.plot_position
             
             with gl_enable(GL.GL_FOG):
@@ -607,8 +616,13 @@ class PlotWidget(QtOpenGL.QGLWidget):
                         
                         with gl_enable(GL.GL_TEXTURE_2D):
                             GL.glBindTexture(GL.GL_TEXTURE_2D, canvas_textures[name])
-                            draw_plot()
+                            draw_plot(self.perspective_transition, self.screen_aspect)
     
+            
+            GL.glDepthMask(False)
+            self.draw_title_text()
+            GL.glDepthMask(True)
+
     @property
     def gl_context(self):
         'return the openGL context'
@@ -644,26 +658,25 @@ class PlotWidget(QtOpenGL.QGLWidget):
             return self.current_canvas.toolTipEvent(event)
 
     def mousePressEvent(self, event):
-        pass
-#        if self.coverflow_state:
-#            return
-#        else:
-#            self.current_canvas.mousePressEvent(event)
+        event.ignore()
         
     def mouseReleaseEvent(self, event):
-#        if self.coverflow_state:
             index = self.test_over(event.pos())
             
             if index is not None:
                 self.goto_canvas(index)
-#        else:
-#            self.current_canvas.mouseReleaseEvent(event)
+                return
+            
+            event.ignore()
+            
             
     def mouseDoubleClickEvent(self, event):
-#        if self.coverflow_state:
             index = self.test_over(event.pos())
             if index is not None:
                 self.set_single_canvas_state()
+                return
+            
+            event.ignore()
 
     def test_over(self, pos):
         '''
@@ -710,16 +723,12 @@ class PlotWidget(QtOpenGL.QGLWidget):
         
         self.makeCurrent()
         
-#        if self.coverflow_state:
         if self.test_over(event.pos()) is None:
             self.setCursor(Qt.ArrowCursor)
         else:
             self.setCursor(Qt.PointingHandCursor)
-#        else:
-#            self.current_canvas.mouseMoveEvent(event)
 
     def contextMenuEvent(self, event):
-#        if self.coverflow_state:
 
         menu = QMenu()
         
@@ -734,8 +743,6 @@ class PlotWidget(QtOpenGL.QGLWidget):
         
         event.accept()
             
-#        else:
-#            self.current_canvas.contextMenuEvent(event)
         
     def animate_single_canvas_state(self):
         '''
@@ -787,10 +794,10 @@ class PlotWidget(QtOpenGL.QGLWidget):
         '''
         TODO: 
         '''
-        print "plot keyPressEvent"
         if self.coverflow_state:
             if event.key() in [Qt.Key_Enter, Qt.Key_Return]:
                 self.animate_single_canvas_state()
+                return 
             else:
                 names = self._canvases.keys()
                 index = names.index(self.current_canvas_id)
@@ -806,10 +813,10 @@ class PlotWidget(QtOpenGL.QGLWidget):
                         pos = 1
                     
                     self.goto_canvas(index + pos)
+                    return
         else:
             if event.key() == Qt.Key_Escape:
                 self.animate_coverflow_state()
-                
-#            else:
-#                self.current_canvas.keyPressEvent(event)
-
+                return
+        
+        event.ignore()

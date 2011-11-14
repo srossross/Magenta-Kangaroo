@@ -58,7 +58,7 @@ class Scene(CanvasBase):
         return screen_point
 
     def copy(self):
-        pass
+        return Scene(self.parent(), self.objectName(), background_color=self.background_color)
     
     def __init__(self, parent, name='Magenta Scene', background_color=None):
 
@@ -99,6 +99,9 @@ class Scene(CanvasBase):
     
     controller_changed = QtCore.Signal(bool, str)
     
+    def projection(self, screen_aspect, near= -1, far=1):
+        GLU.gluPerspective(45.0, screen_aspect, 0.15, 30.0)
+
     def resizeGL(self, w, h):
         '''
         '''
@@ -106,6 +109,7 @@ class Scene(CanvasBase):
             
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
+        self.projection(w / h)
 
         GL.glMatrixMode(GL.GL_MODELVIEW)
         GL.glLoadIdentity()
