@@ -13,9 +13,11 @@ from PySide.QtGui import QWidget
 from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
 import numpy as np
 import os
-from maka.controllers import PanControl, SelectionControl, ZoomControl
+from maka.tools.controllers import PanControl, SelectionControl, ZoomControl
 from maka.marker_animation import MarkerAnimation
 from maka.canvas_base import CanvasBase
+from maka.gl_primitives.frame_border import draw_frame_border
+from maka.tools.legend import Legend
 #from PySide.QtGui import *
 
 SIZE = 100
@@ -134,6 +136,8 @@ class Canvas(CanvasBase):
         
         self._init_controllers(controllers, 'pan')
         
+        self.tools = [Legend(self)]
+        
     def saveState(self, settings):
         '''
         Save this canvases state. 
@@ -241,6 +245,11 @@ class Canvas(CanvasBase):
         
         if plot.parent() is None:
             plot.setParent(self)
+    
+    def initializeGL(self):
+         
+        for tool in self.tools:
+            tool.initializeGL()
 
     def resizeGL(self, w, h):
         '''
@@ -256,6 +265,9 @@ class Canvas(CanvasBase):
         GL.glLoadIdentity()
 
         self.update_render_target(w, h)
+        
+        for tool in self.tools:
+            tool.resizeGL(w, h)
         
     def projection(self, screen_aspect, near= -1, far=1):
         '''
@@ -303,6 +315,18 @@ class Canvas(CanvasBase):
             self.draw_markers()
             
         self.controller._paintGL(self)
+        
+#        bc = self.palette().color(QtGui.QPalette.Dark)
+#        GL.glColor(bc.redF(), bc.greenF(), bc.blueF(), bc.alphaF())
+        GL.glColor(.3, .3, .3, 1)
+        
+#        print self.parent().size(), self.parent().width()
+#        print self.parent()
+
+        for tool in self.tools:
+            tool.paintGL()
+            
+#        draw_frame_border(self.parent().width(), self.parent().height())
         
     def draw_markers(self):
         '''

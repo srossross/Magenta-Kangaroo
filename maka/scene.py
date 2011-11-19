@@ -13,7 +13,7 @@ from PySide.QtGui import QWidget
 from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
 import numpy as np
 import os
-from maka.controllers import PanControl, SelectionControl, ZoomControl
+from maka.tools.controllers import PanControl, SelectionControl, ZoomControl
 from maka.marker_animation import MarkerAnimation
 from maka.canvas_base import CanvasBase
 

@@ -14,7 +14,7 @@ from PySide.QtGui import QWidget
 from maka.util import matrix, gl_enable, SAction
 import numpy as np
 import os
-from maka.controllers import NoControl
+from maka.tools.controllers import NoControl
 
 SIZE = 100
 
@@ -258,3 +258,6 @@ class CanvasBase(QWidget):
         pass
 
     require_redraw = QtCore.Signal() 
+    
+    def initializeGL(self):
+        pass

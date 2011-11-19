@@ -82,7 +82,7 @@ class ImagePlot(QtCore.QObject):
         
         self.interp = interp
         with self.texture:
-            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_BLEND)
+            GL.glTexEnvf(GL.GL_TEXTURE_ENV, GL.GL_TEXTURE_ENV_MODE, GL.GL_MODULATE)
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, interp)
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
 
@@ -163,11 +163,8 @@ class ImagePlot(QtCore.QObject):
         
         color_map_name = settings.value('color_map', None)
         
-        print "color_map_name", color_map_name
-        
         cdict = COLORMAPS.get(color_map_name)
         
-        print cdict
         if cdict is not None:
             self.colormap_triggered(cdict)
         
@@ -213,7 +210,7 @@ class ImagePlot(QtCore.QObject):
 #            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, self.interp)
 #            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, self.interp)
 #            GL.glBlendFunc(GL.GL_ONE, GL.GL_ZERO)
-            
+            GL.glColor(1, 1, 1, 1)
             with gl_begin(GL.GL_QUADS):
                 GL.glTexCoord2f(0, 0); GL.glVertex2f(-1, 1);
                 GL.glTexCoord2f(1, 0); GL.glVertex2f(1, 1);

@@ -471,6 +471,9 @@ class PlotWidget(QtOpenGL.QGLWidget):
         
         self.drop_pin_tex = self.bindTexture(self.drop_pin.toImage())
         
+        for canvas in self.canvases.values():
+            canvas.initializeGL()
+        
     def paintGL(self):
         '''
         Main called for screen updates. 
