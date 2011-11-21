@@ -7,8 +7,9 @@ Created on Jul 21, 2011
 from PySide import QtCore
 from PySide.QtGui import QAction, QMenu, QColor, QColorDialog
 from PySide.QtGui import QWidget, QPalette, QWhatsThis, QApplication, QCursor
+from PySide.QtOpenGL import QGLBuffer
 from OpenGL import GL
-from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
+#from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
 import pyopencl as cl #@UnresolvedImport
 from contextlib import contextmanager
 from maka.util import acquire_gl_objects, client_state, SAction, gl_enable, \
@@ -54,12 +55,19 @@ class LinePlot(QWidget):
         self.gl_context = gl_context
         self.cl_context = cl_context
 
-        vbo = GL.glGenBuffers(1)
+#        vbo = GL.glGenBuffers(1)
+        self.qvbo = QGLBuffer(QGLBuffer.VertexBuffer)
+        self.qvbo.create()
+        self.qvbo.bind()
+        self.qvbo.setUsagePattern(QGLBuffer.StaticDraw)
+        self.qvbo.allocate(self.size * 2 * 4)
+        self.qvbo.release()
+#        rawGlBufferData(GL.GL_ARRAY_BUFFER, self.size * 2 * 4, None, GL.GL_STATIC_DRAW)
 
-        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo)
-        rawGlBufferData(GL.GL_ARRAY_BUFFER, self.size * 2 * 4, None, GL.GL_STATIC_DRAW)
 
-        self.vtx_array = VertexArray(self.cl_context, vbo)
+#        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo)
+
+        self.vtx_array = VertexArray(self.cl_context, self.qvbo)
 
         self.queue = cl.CommandQueue(self.cl_context)
 
@@ -329,16 +337,18 @@ class VertexArray(object):
         
             
     '''
-    def __init__(self, ctx, vbo):
-        self.vbo = vbo
+    def __init__(self, ctx, qvbo):
+        self.qvbo = qvbo
         self.ctx = ctx
         self._cl_buffer = None
 
     def __enter__(self):
-        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.vbo)
+        self.qvbo.bind()
+#        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.vbo)
         GL.glVertexPointer(2, GL.GL_FLOAT, 0, None)
 
     def __exit__(self, *args):
+        self.qvbo.release()
         pass
 
     @property
@@ -346,7 +356,7 @@ class VertexArray(object):
 
         if self._cl_buffer is None:
             with self:
-                self._cl_buffer = cl.GLBuffer(self.ctx, cl.mem_flags.READ_WRITE, int(self.vbo))
+                self._cl_buffer = cl.GLBuffer(self.ctx, cl.mem_flags.READ_WRITE, int(self.qvbo.bufferId()))
 
         return self._cl_buffer
 
