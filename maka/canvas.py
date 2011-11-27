@@ -5,24 +5,28 @@ Created on Jul 21, 2011
 '''
 from __future__ import division
 from OpenGL import GL, GLU
-from PIL.Image import fromarray #@UnresolvedImport
 from PySide import QtCore, QtGui
-from PySide.QtCore import Qt, QEvent
-from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QPalette
+from PySide.QtCore import Qt, Property, QRect, QPoint, QTimer
+from PySide.QtGui import QMenu, QAction, QColor, QProgressBar, QRegion
 from PySide.QtGui import QWidget
-from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
-import numpy as np
-import os
+from maka.util import matrix, gl_begin, gl_disable, gl_enable, \
+    gl_attributes
 from maka.tools.controllers import PanControl, SelectionControl, ZoomControl
 from maka.marker_animation import MarkerAnimation
 from maka.canvas_base import CanvasBase
-from maka.gl_primitives.frame_border import draw_frame_border
 from maka.tools.legend import Legend
-#from PySide.QtGui import *
+from maka.tools.axes import Axes
 
 SIZE = 100
 
-
+def move_to(method, marker):
+    
+    @QtCore.Slot()
+    def move_to_slot():
+        method(marker)
+    
+    return move_to_slot
+    
 class Canvas(CanvasBase):
     '''
     Canvas for 2D plotting. add this to a PlotWidget
@@ -103,9 +107,16 @@ class Canvas(CanvasBase):
 
         return new_canvas
         
-    def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=None):
+    def __init__(self, parent, aspect= -1, name='Magenta Canvas', background_color=None, start_busy=False):
 
         super(Canvas, self).__init__(parent, name , background_color)
+        
+        self._busy = False
+        self.timer = QTimer()
+        self.timer.setInterval(1000 // 30)
+        self.timer.timeout.connect(self.reqest_redraw)
+        self._progress_bar = None
+        self.busy = start_busy
         
         self.setObjectName(name)
 
@@ -121,6 +132,10 @@ class Canvas(CanvasBase):
         
         self.drop_marker_act = drop_marker_act = QAction("Drop Marker", self)
         self.show_markers_act = show_markers_act = QAction("Visible", self)
+        
+        self.remove_marker_act = QAction("Remove Marker", self)
+        self.remove_marker_act.setEnabled(False)
+        self.remove_marker_act.triggered.connect(self.remove_marker)
         show_markers_act.setCheckable(True)
         show_markers_act.setChecked(True)
         
@@ -136,7 +151,8 @@ class Canvas(CanvasBase):
         
         self._init_controllers(controllers, 'pan')
         
-        self.tools = [Legend(self)]
+        self._init_tools([Axes(self, title=name), Legend(self)])
+#        self._init_tools([])
         
     def saveState(self, settings):
         '''
@@ -193,8 +209,9 @@ class Canvas(CanvasBase):
     def markers_visible(self):
         return self.show_markers_act.isChecked()
     
-    @QtCore.Slot(bool)
-    def remove_marker(self, marker):
+    @QtCore.Slot()
+    def remove_marker(self):
+        marker = self.remove_marker_act.data()
         self.markers.pop(marker, None)
         self.require_redraw.emit()
         
@@ -250,7 +267,7 @@ class Canvas(CanvasBase):
          
         for tool in self.tools:
             tool.initializeGL()
-
+    
     def resizeGL(self, w, h):
         '''
         
@@ -289,21 +306,51 @@ class Canvas(CanvasBase):
             bottom = 1 / screen_aspect
             
         GL.glOrtho(left, right, top, bottom, near, far)
+    
+    @property
+    def viewport(self):
+        viewport = GL.glGetIntegerv(GL.GL_VIEWPORT)
+        return QRect(viewport[0], viewport[1], viewport[2], viewport[3])
+    
+    def drawBusy(self, painter):
+        if painter is None or not self.visible:
+            return 
         
-    def paintGL(self):
-        '''
-        Draw the current scene to OpenGL
-        '''
-        bg = self.background_color
-        GL.glClearColor(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF())
+        painter.save()
         
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
+        magenta = QColor(Qt.magenta)
+        magenta.setAlphaF(.4)
+        painter.setBrush(magenta)
         
+        if self._progress_bar is None:
+            self._progress_bar = QProgressBar()
+        bar = self._progress_bar    
+        
+        viewport = self.viewport
+        painter.drawRect(self.viewport)
+        
+        bar.setMinimum(0)
+        bar.setMaximum(0)
+        bar.setValue(0)
+        
+        x = (viewport.width() - bar.width()) / 2
+        y = (viewport.height() - bar.height()) / 2
+        
+        rf = QWidget.RenderFlags(QWidget.DrawChildren)
+        bar.render(painter, QPoint(x, y), QRegion(bar.rect()), rf)
+        
+        painter.restore()
+        
+        painter.beginNativePainting()
+        painter.endNativePainting()
+    
+    
+    def draw_plots(self, painter):
         qs = [plot.queue for plot in self.plots]
 
         for q in qs:
             q.finish()
-        
+
         with matrix(GL.GL_PROJECTION):
             self.data_space()
         
@@ -316,18 +363,28 @@ class Canvas(CanvasBase):
             
         self.controller._paintGL(self)
         
-#        bc = self.palette().color(QtGui.QPalette.Dark)
-#        GL.glColor(bc.redF(), bc.greenF(), bc.blueF(), bc.alphaF())
-        GL.glColor(.3, .3, .3, 1)
+    def paintGL(self, painter):
+        '''
+        Draw the current scene to OpenGL
+        '''
         
-#        print self.parent().size(), self.parent().width()
-#        print self.parent()
+        with gl_attributes():
 
-        for tool in self.tools:
-            tool.paintGL()
+            bg = self.background_color
+            GL.glClearColor(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF())
+            GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
             
-#        draw_frame_border(self.parent().width(), self.parent().height())
-        
+            if self.busy:
+                self.drawBusy(painter)
+            else:
+                self.draw_plots(painter)
+                
+        for tool in self.tools:
+                tool.paintGL(painter)
+    
+        painter.beginNativePainting()
+        painter.endNativePainting()
+
     def draw_markers(self):
         '''
         Draw the current markers
@@ -421,14 +478,14 @@ class Canvas(CanvasBase):
         event.ignore()
         return False
     
-    def mousePressEvent(self, event):
-        self.controller._mousePressEvent(self, event)
-            
-    def mouseReleaseEvent(self, event):
-        self.controller._mouseReleaseEvent(self, event)
-    
-    def mouseMoveEvent(self, event):
-        self.controller._mouseMoveEvent(self, event)
+#    def mousePressEvent(self, event):
+#        self.controller._mousePressEvent(self, event)
+#            
+#    def mouseReleaseEvent(self, event):
+#        self.controller._mouseReleaseEvent(self, event)
+#    
+#    def mouseMoveEvent(self, event):
+#        self.controller._mouseMoveEvent(self, event)
         
     def move_to_marker(self, name):
         '''
@@ -462,7 +519,7 @@ class Canvas(CanvasBase):
             
         self.parent().canvases[canvas_name].add_plot(self.plots[plot_idx])
         
-        print "set_current_canvas", canvas_name
+#        print "set_current_canvas", canvas_name
         self.parent().set_current_canvas(canvas_name)
 
     def _ctx_markers(self, event, menu):
@@ -476,20 +533,19 @@ class Canvas(CanvasBase):
         markers.addAction(self.drop_marker_act)
         makers_under = list(self.markers_at(drop_here))
         if makers_under:
-            remove_marker_act = SAction("Remove %r" % makers_under[0], self, makers_under[0])
-            remove_marker_act.setEnabled(True)
-            remove_marker_act.triggered_data.connect(self.remove_marker)
+            self.remove_marker_act.setEnabled(True)
+            self.remove_marker_act.setData(makers_under[0])
         else:
-            remove_marker_act = QAction("Remove Marker", self)
-            remove_marker_act.setEnabled(False)
-        markers.addAction(remove_marker_act)
+            self.remove_marker_act.setEnabled(False)
+            self.remove_marker_act.setData(None)
+        markers.addAction(self.remove_marker_act)
         markers.addSeparator()
         markers.addAction(self.show_markers_act)
         go_to = QMenu("Go To")
         markers.addMenu(go_to)
         for marker in self.markers.keys():
-            action = SAction(marker, self, data=marker)
-            action.triggered_data.connect(self.move_to_marker)
+            action = QAction(marker, self)
+            action.triggered.connect(move_to(self.move_to_marker, marker))
             go_to.addAction(action)
         
         menu.addMenu(self.bg_color_menu)
@@ -498,9 +554,9 @@ class Canvas(CanvasBase):
         '''
         Add plot actions to a context menu
         '''
+        menu.addSeparator()
         for i, plot in enumerate(self.plots):
         
-            menu.addSeparator()
             
             title = QMenu(str(plot.objectName()) if plot.objectName() else "Plot %i" % i)
             menu.addMenu(title)
@@ -509,29 +565,27 @@ class Canvas(CanvasBase):
                 title.addAction(action)
             for sub_menu in plot.menus:
                 title.addMenu(sub_menu)
-
-            move_to_menu = QMenu("Move To")
-            copy_to_menu = QMenu("Copy To")
-            for canvas_name in self.parent().canvases:
-                if canvas_name == self.objectName():
-                    continue
-                
-                move_act = SAction(canvas_name, self, (i, canvas_name))
-                move_act.triggered_data.connect(self.move_to_canvas)
-                copy_act = SAction(canvas_name, self, (i, canvas_name))
-                copy_act.triggered_data.connect(self.copy_to_canvas)
-                
-                move_to_menu.addAction(move_act)
-                copy_to_menu.addAction(copy_act)
-                
-            move_to_menu.addSeparator()
-            move_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
-            copy_to_menu.addSeparator()
-            copy_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
-                
-            title.addMenu(move_to_menu)
-            title.addMenu(copy_to_menu)
-
+        menu.addSeparator()
+#            move_to_menu = QMenu("Move To")
+#            copy_to_menu = QMenu("Copy To")
+#            for canvas_name in self.parent().canvases:
+#                if canvas_name == self.objectName():
+#                    continue
+#                
+#                move_act = SAction(canvas_name, self, (i, canvas_name))
+#                move_act.triggered_data.connect(self.move_to_canvas)
+#                copy_act = SAction(canvas_name, self, (i, canvas_name))
+#                copy_act.triggered_data.connect(self.copy_to_canvas)
+#                
+#                move_to_menu.addAction(move_act)
+#                copy_to_menu.addAction(copy_act)
+#            move_to_menu.addSeparator()
+#            move_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
+#            copy_to_menu.addSeparator()
+#            copy_to_menu.addAction(SAction('New Canvas ...', self, (i, None)))
+#            title.addMenu(move_to_menu)
+#            title.addMenu(copy_to_menu)
+        
     def _ctx_parent(self, event, menu):
         '''
         Add PlotWidget actions to a context menu
@@ -544,6 +598,11 @@ class Canvas(CanvasBase):
             for action in self.parent().ctx_menu_items['actions']:
                 menu.addAction(action)
 
+    def _ctx_tools(self, event, menu):
+        
+        for tool in self.tools:
+            menu.addMenu(tool.menu)
+            
     def contextMenuEvent(self, event):
         menu = QMenu()
         
@@ -552,6 +611,7 @@ class Canvas(CanvasBase):
         self._ctx_markers(event, menu)
         
         self._ctx_plots(event, menu)
+        self._ctx_tools(event, menu)
 
         self._ctx_parent(event, menu)
                     
@@ -565,22 +625,18 @@ class Canvas(CanvasBase):
     def mapToGlobal(self, pos):
         return self.parent().mapToGlobal(pos)
     
-    def busy(self):
         
-        GL.glMatrixMode(GL.GL_MODELVIEW)
-        GL.glPushMatrix()
-        GL.glLoadIdentity()
-        GL.glMatrixMode(GL.GL_PROJECTION)
-        GL.glPushMatrix()
-        GL.glLoadIdentity()
-        GL.glColor4ub(139, 0, 139, 100)
-        GL.glBegin(GL.GL_QUADS)
-        GL.glVertex3i(-1, -1, -1)
-        GL.glVertex3i(1, -1, -1)
-        GL.glVertex3i(1, 1, -1)
-        GL.glVertex3i(-1, 1, -1)
-        GL.glEnd()
-        GL.glPopMatrix()
-        GL.glMatrixMode(GL.GL_MODELVIEW)
-        GL.glPopMatrix()
+    def isBusy(self):
+        return self._busy
+
+    def setBusy(self, value):
+        self._busy = value
+        self.require_redraw.emit()
+        
+        if value:
+            self.timer.start(1000 // 30)
+        else:
+            self.timer.stop()
+    
+    busy = Property(bool, isBusy, setBusy)
 

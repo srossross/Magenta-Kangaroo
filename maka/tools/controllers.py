@@ -6,64 +6,107 @@ Created on Oct 15, 2011
 
 from OpenGL import GL, GLU
 from PySide import QtCore
-from PySide.QtCore import Qt, QPropertyAnimation
-from PySide.QtGui import QWidget, QCursor
-from maka.util import gl_begin, matrix, gl_enable, gl_disable, SAction
+from PySide.QtCore import Qt, QPropertyAnimation, QObject, QEvent
+from PySide.QtGui import QWidget, QCursor, QAction
+from maka.util import gl_begin, matrix, gl_enable, gl_disable
 
 from time import time
 from numpy import mean
 SIZE = 100
 
-class NoControl(QtCore.QObject):
+class NoControl(QObject):
     '''
     Base tool class.
     '''
     def __init__(self, name, key, canvas=None):
-        QtCore.QObject.__init__(self, parent=canvas)
+        QObject.__init__(self, parent=canvas)
         
         self.key = key
         
         self.setObjectName(name)
         
-        self.select_action = SAction(name, canvas, name)
+        self.select_action = QAction(name, self)
         self.select_action.setCheckable(True)
         self.select_action.setChecked(False)
         self._enabled = False
         
-    def _mousePressEvent(self, canvas, event):
+        self.select_action.toggled.connect(self.enabled)
+        
+    @property
+    def is_active(self):
+        return self.select_action.isChecked()
+           
+    def event(self, event):
+        
+        event.accept()
+        
+        etype = event.type()
+         
+        if etype is QEvent.MouseMove:
+            self.mouseMoveEvent(event)
+        elif etype is QEvent.MouseButtonPress:
+            self.mousePressEvent(event)
+        elif etype is QEvent.MouseButtonRelease:
+            self.mouseReleaseEvent(event)
+        elif etype is QEvent.MouseButtonDblClick:
+            self.mouseReleaseEvent(event)
+        elif etype is QEvent.Enter:
+            self.enterEvent(event)
+        elif etype is QEvent.Leave:
+            self.leaveEvent(event)
+        else:
+            event.ignore()
+            
+        return event.isAccepted()
+    
+    @QtCore.Slot(bool)
+    def enabled(self, checked):
+        if checked:
+            self.enable(self.plot_widget)
+        else:
+            self.diable(self.plot_widget)
+    
+    def enable(self, plot_widget): pass
+    def diable(self, plot_widget): pass
+    def mousePressEvent(self, event):
         event.ignore()
 
-    def _mouseMoveEvent(self, canvas, event):
+    def mouseMoveEvent(self, event):
         event.ignore()
 
-    def _mouseReleaseEvent(self, canvas, event):
+    def mouseReleaseEvent(self, event):
+        event.ignore()
+        
+    def mouseDoubleClickEvent(self, event):
+        event.ignore()
+
+    def enterEvent(self, event):
+        event.ignore()
+        
+    def leaveEvent(self, event):
         event.ignore()
     
     def _paintGL(self, canvas):
         pass
     
-    def enable(self, plot_widget):
-        pass
-
-    def disable(self, plot_widget):
-        if self._enabled:
-            self._enabled = False
+    @property
+    def plot_widget(self):
+        return self.parent().parent()
+    
             
 class PanControl(NoControl):
     
     def enable(self, plot_widget):
-        if not self._enabled:
-            self.plot_widget = plot_widget
-            plot_widget.setCursor(Qt.OpenHandCursor)
-            self._enabled = True
+        plot_widget.setCursor(Qt.OpenHandCursor)
+        self._enabled = True
 
     def _get_delta(self):
         return self._delta
     
     def _set_delta(self, value):
         self._delta = value
-        self.canvas.bounds.translate(-self._delta.x(), -self._delta.y())
-        self.canvas.require_redraw.emit()
+        self.parent().bounds.translate(-self._delta.x(), -self._delta.y())
+        self.parent().require_redraw.emit()
         
     delta = QtCore.Property(QtCore.QPointF, _get_delta, _set_delta)
     
@@ -77,22 +120,23 @@ class PanControl(NoControl):
         self.animation = QPropertyAnimation(self, 'delta')
         self.animation.setDuration(1000)
         self.animation.setEasingCurve(QtCore.QEasingCurve.OutQuart)
-#        self.animation.start()
 
-        
-    def _mousePressEvent(self, canvas, event):
+    def mousePressEvent(self, event):
         self._delta = QtCore.QPointF(0, 0)
         self._time = 0 
         if (event.buttons() & Qt.LeftButton):
             self.plot_widget.setCursor(Qt.ClosedHandCursor)
             self.animation.stop()
-            self.orig = canvas.mapToGL(event.pos())
+            self.orig = self.parent().mapToGL(event.pos())
         else:
             event.ignore()
 
-    def _mouseMoveEvent(self, canvas, event):
+    def mouseMoveEvent(self, event):
+        
         
         if (event.buttons() & Qt.LeftButton):
+            
+            canvas = self.parent()
             self.animation.stop()
             new = canvas.mapToGL(event.pos())
             
@@ -114,7 +158,7 @@ class PanControl(NoControl):
             event.ignore()
             
             
-    def _mouseReleaseEvent(self, canvas, event):
+    def mouseReleaseEvent(self, event):
         self.plot_widget.setCursor(Qt.OpenHandCursor)
         
         deltas = [d for d in self._deltas if d is not None]
@@ -140,8 +184,6 @@ class PanControl(NoControl):
         x = (dxy.x() / dt) / fps
         y = (dxy.y() / dt) / fps
         
-        
-        self.canvas = canvas
         self.animation.setStartValue(QtCore.QPointF(x, y))
         self.animation.setEndValue(QtCore.QPointF(0, 0))
         self.animation.start()
@@ -155,7 +197,7 @@ class ZoomControl(NoControl):
     
     _paint = False
     
-    def _mousePressEvent(self, canvas, event):
+    def mousePressEvent(self, event):
 
         if (not (event.buttons() & Qt.LeftButton)) or (event.modifiers() & Qt.ControlModifier):
             self._paint = False
@@ -163,6 +205,8 @@ class ZoomControl(NoControl):
             return
         
         self._paint = True
+        
+        canvas = self.parent()
         
         self.start_point = canvas.mapToGL(event.pos())
         self.current_point = canvas.mapToGL(event.pos())
@@ -182,7 +226,7 @@ class ZoomControl(NoControl):
             sign = -1 if (dx) < 0 else 1
             curr.setX(start.x() + sign * abs(dy) / aspect)
             
-    def _mouseMoveEvent(self, canvas, event):
+    def mouseMoveEvent(self, event):
         
         if not (event.buttons() & Qt.LeftButton):
             self._paint = False
@@ -190,6 +234,7 @@ class ZoomControl(NoControl):
             return 
         
         if self._paint:
+            canvas = self.parent()
             start = self.start_point
             curr = canvas.mapToGL(event.pos())
             
@@ -200,9 +245,10 @@ class ZoomControl(NoControl):
             
         canvas.require_redraw.emit()
     
-    def _mouseReleaseEvent(self, canvas, event):
+    def mouseReleaseEvent(self, event):
         self._paint = False
-
+        canvas = self.parent()
+        
         start = self.start_point
         end = canvas.mapToGL(event.pos())
         
@@ -295,7 +341,10 @@ class ZoomControl(NoControl):
 
 class SelectionControl(NoControl):
     
-    def _mouseMoveEvent(self, canvas, event):
+    def mouseMoveEvent(self, event):
+        
+        canvas = self.parent()
+        
         with matrix(GL.GL_MODELVIEW):
             canvas.data_space()
             

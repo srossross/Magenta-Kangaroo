@@ -15,6 +15,31 @@ def client_state(state):
     yield
     GL.glDisableClientState(state)
 
+
+@contextmanager
+def gl_push_all():
+
+    GL.glPushAttrib(GL.GL_ALL_ATTRIB_BITS)
+    GL.glMatrixMode(GL.GL_MODELVIEW)
+    GL.glPushMatrix()
+    GL.glMatrixMode(GL.GL_PROJECTION)
+    GL.glPushMatrix()
+    
+    yield
+                
+    GL.glPopAttrib()
+    GL.glMatrixMode(GL.GL_MODELVIEW)
+    GL.glPopMatrix()
+    GL.glMatrixMode(GL.GL_PROJECTION)
+    GL.glPopMatrix()
+
+
+@contextmanager
+def gl_attributes():
+    GL.glPushAttrib(GL.GL_ALL_ATTRIB_BITS)
+    yield
+    GL.glPopAttrib()
+
 @contextmanager
 def acquire_gl_objects(queue, objects):
     cl.enqueue_acquire_gl_objects(queue, objects)
@@ -134,23 +159,23 @@ def debug_execute(app, *args, **kwargs):
         raise execption_type, execption_value, execption_traceback
 
 
-class SAction(QtGui.QAction):
-    def __init__(self, name, widget, data=None):
-        QtGui.QAction.__init__(self, name, widget)
-        self.data = data
-        
-        self.triggered.connect(self._triggered)
-        self.toggled.connect(self._toggled)
-    
-    @QtCore.Slot(bool)
-    def _toggled(self, checked):
-        self.toggled_data.emit(checked, self.data)
-        
-    toggled_data = QtCore.Signal(bool, object)
-    
-    @QtCore.Slot()
-    def _triggered(self):
-        self.triggered_data.emit(self.data)
-        
-    triggered_data = QtCore.Signal(object)
-        
+#class SAction(QtGui.QAction):
+#    def __init__(self, name, widget, data=None):
+#        QtGui.QAction.__init__(self, name, widget)
+#        self.data = data
+#        
+#        self.triggered.connect(self._triggered)
+#        self.toggled.connect(self._toggled)
+#    
+#    @QtCore.Slot(bool)
+#    def _toggled(self, checked):
+#        self.toggled_data.emit(checked, self.data)
+#        
+#    toggled_data = QtCore.Signal(bool, object)
+#    
+#    @QtCore.Slot()
+#    def _triggered(self):
+#        self.triggered_data.emit(self.data)
+#        
+#    triggered_data = QtCore.Signal(object)
+#        

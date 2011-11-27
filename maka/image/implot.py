@@ -4,11 +4,11 @@ Created on Jul 23, 2011
 @author: sean
 '''
 from PySide import QtCore
-from PySide.QtGui import QAction, QMenu
+from PySide.QtGui import QAction, QActionGroup, QMenu
 from OpenGL import GL
 import pyopencl as cl #@UnresolvedImport
 import numpy as np
-from maka.util import gl_begin, gl_enable, gl_disable, SAction
+from maka.util import gl_begin, gl_enable, gl_disable
 from maka.image.color_map import COLORMAPS
 
 class Texture2D(object):
@@ -19,12 +19,10 @@ class Texture2D(object):
 
         devices = cl_ctx.get_info(cl.context_info.DEVICES)
         
-        print "devices", devices
         device = devices[0]
 
         self.have_image_support = share and device.get_info(cl.device_info.IMAGE_SUPPORT)
 
-        print 'self.have_image_support', self.have_image_support
         if self.have_image_support:
             self._cl_image = cl.GLTexture(cl_ctx, cl.mem_flags.READ_WRITE,
                                           GL.GL_TEXTURE_2D, 0, self.texture, 2)
@@ -98,34 +96,34 @@ class ImagePlot(QtCore.QObject):
         self._actions = {'visible': self._visible_act}
         
         self._init_colormaps()
-        
+    
+    def sample(self):
+        return None
     def _init_colormaps(self):
         
         self._colormap_menu = colormap_menu = QMenu('Color Map')
         self._menus = {'colormap': colormap_menu}
         
         self._colormap_actions = []
+        self._colormap_action_group = action_group = QActionGroup(self)
+        action_group.setExclusive(True)
         
         for name, cdict in COLORMAPS.items():
-            caction = SAction(name, self, data=cdict)
+            caction = QAction(name, self)
+            caction.setData(cdict)
             caction.setCheckable(True)
-            caction.triggered_data.connect(self.colormap_triggered)
             self._colormap_actions.append(caction)
+            action_group.addAction(caction)
             
-        self._color_map = None
+        action_group.triggered.connect(self.colormap_triggered)
+        
+        self.cdict = None
         
         colormap_menu.addActions(self._colormap_actions)
         
-    @QtCore.Slot()
-    def colormap_triggered(self, cdict):
-        self.color_map.set_cdict(cdict)
-        self.color_map.compute(self.queue)
-        
-        for action in self._colormap_actions:
-            if cdict is action.data:
-                action.setChecked(True)
-            else:
-                action.setChecked(False)
+    @QtCore.Slot(QAction)
+    def colormap_triggered(self, action):
+        self.cdict = action.data()
         
         
     @property
@@ -139,7 +137,7 @@ class ImagePlot(QtCore.QObject):
     @property
     def color_map_name(self):
         for cname, item in COLORMAPS.items():
-            if self.color_map._cdict is item:
+            if self.color_map._cdict == item:
                 color_map_name = cname
                 break
         else:
@@ -166,9 +164,27 @@ class ImagePlot(QtCore.QObject):
         cdict = COLORMAPS.get(color_map_name)
         
         if cdict is not None:
-            self.colormap_triggered(cdict)
+            self.cdict = cdict
+#            self.colormap_triggered(cdict)
         
         settings.endGroup()
+    
+    def _get_cdict(self):
+        return self._color_map._cdict
+
+    def _set_cdict(self, value):
+        if value is not None:
+            self.color_map.set_cdict(value)
+            self.color_map.compute(self.queue)
+            
+            for action in self._colormap_action_group.actions():
+                if action.data() == value:
+                    action.setChecked(True)
+                    break
+            else:
+                pass
+                    
+    cdict = QtCore.Property(object, _get_cdict, _set_cdict)
     
     @property
     def color_map(self):
@@ -178,12 +194,6 @@ class ImagePlot(QtCore.QObject):
     def color_map(self, value):
         self._color_map = value
     
-        for action in self._colormap_actions:
-            if self._color_map._cdict is action.data:
-                action.setChecked(True)
-            else:
-                action.setChecked(False)
-
     def process(self):
 
         for segment in self._pipe_segments:

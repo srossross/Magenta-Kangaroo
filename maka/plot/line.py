@@ -5,15 +5,15 @@ Created on Jul 21, 2011
 '''
 
 from PySide import QtCore
-from PySide.QtGui import QAction, QMenu, QColor, QColorDialog
-from PySide.QtGui import QWidget, QPalette, QWhatsThis, QApplication, QCursor
+from PySide.QtCore import Property, QObject
+from PySide.QtGui import QActionGroup, QAction, QMenu, QColor, QColorDialog
+from PySide.QtGui import QWidget, QPalette, QWhatsThis, QCursor
 from PySide.QtOpenGL import QGLBuffer
 from OpenGL import GL
-#from OpenGL.raw.GL.VERSION.GL_1_5 import glBufferData as rawGlBufferData
 import pyopencl as cl #@UnresolvedImport
 from contextlib import contextmanager
-from maka.util import acquire_gl_objects, client_state, SAction, gl_enable, \
-    gl_disable
+from maka.util import acquire_gl_objects
+from maka.plot.line_types import LineType, LineTypeStore
 
 
 class LinePlot(QWidget):
@@ -21,33 +21,16 @@ class LinePlot(QWidget):
     A basic line plot. 
     '''
 
-    def _init_line_color(self, color):
-        
-        color_menu = QMenu("Line Color")
-        
-        self._color_actions = [SAction("red", self, QColor(255, 0, 0)),
-            SAction("green", self, QColor(0, 255, 0)),
-            SAction("blue", self, QColor(0, 0, 255)),
-            SAction("Other ...", self, None)]
-        
-        self._menus['color'] = color_menu
-        
-        for action in self._color_actions:
-            
-            if action is self._color_actions[-1]:
-                color_menu.addSeparator()
-                
-            color_menu.addAction(action)
-            action.setCheckable(True)
-            action.triggered_data.connect(self.change_color)
-        
-        self.change_color(color=color)
 
     def __init__(self, gl_context, cl_context, size, color=QColor(0, 0, 0), name=None,
-                 line_style='solid', thickness=1,
-                 parent=None):
+                 thickness=1, plot_type=None, parent=None):
         QWidget.__init__(self, parent=parent)
 
+        if plot_type is None:
+            plot_type = LineType(self)
+        self._plot_type = plot_type
+        self._plot_types = {type(plot_type):plot_type}
+            
         self._size = size
 
         if name: self.setObjectName(name)
@@ -55,17 +38,12 @@ class LinePlot(QWidget):
         self.gl_context = gl_context
         self.cl_context = cl_context
 
-#        vbo = GL.glGenBuffers(1)
         self.qvbo = QGLBuffer(QGLBuffer.VertexBuffer)
         self.qvbo.create()
         self.qvbo.bind()
         self.qvbo.setUsagePattern(QGLBuffer.StaticDraw)
         self.qvbo.allocate(self.size * 2 * 4)
         self.qvbo.release()
-#        rawGlBufferData(GL.GL_ARRAY_BUFFER, self.size * 2 * 4, None, GL.GL_STATIC_DRAW)
-
-
-#        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo)
 
         self.vtx_array = VertexArray(self.cl_context, self.qvbo)
 
@@ -75,26 +53,30 @@ class LinePlot(QWidget):
         
         self._state = "normal"
         
-#        self.setWhatsThis("This is a plot!!!\n\nPlease leave me alone")
-#        
-        whats_this_act = QAction("Info ...", self)
-        whats_this_act.triggered.connect(self._show_info)
-
         self._actions = {'visible':QAction("Visible", self, checkable=True, checked=True),
-                         'edit':QAction("Edit Plot", self),
-                         'what': whats_this_act
                         }
         
         self._menus = {}
         
+        self._line_type_menu, self._line_type_group = LineTypeStore.type_menu()
+        self._line_type_group.triggered.connect(self.change_plot_type)
         
-        
-        self._init_line_color(color)
-        
-        self._init_line_style(line_style)
+        for action in self._line_type_group.actions():
+            data = action.data()
+            if data == self._plot_type.__class__:
+                action.setChecked(True)
+            
+        self._menus['line_type_menu'] = self._line_type_menu
         
         self._line_thickness = thickness
         
+    @QtCore.Slot(QObject)
+    def change_plot_type(self, action):
+        ptype = action.data()
+        if ptype not in self._plot_types:
+            self._plot_types[ptype] = ptype(self)
+        self._plot_type = self._plot_types[ptype]
+    
     @QtCore.Slot()
     def _show_info(self):
         self.parent().parent().mapFromGlobaQCursor.pos()
@@ -104,20 +86,14 @@ class LinePlot(QWidget):
         return self.palette().color(QPalette.WindowText)
         
     def _set_color(self, qcolor):
-        print "color.setter", qcolor
-        palette = self.palette()
-        palette.setColor(QPalette.WindowText, qcolor)
-        self.setPalette(palette)
-    
-    color = QtCore.Property(QColor, _get_color, _set_color)
-
-    def _get_line_style(self):
-        return self._line_style
         
-    def _set_line_style(self, style):
-        self._line_style = style
-    
-    line_style = QtCore.Property(str, _get_line_style, _set_line_style)
+        if qcolor is not None:
+            palette = self.palette()
+            palette.setColor(QPalette.WindowText, qcolor)
+            self.setPalette(palette)
+
+
+    color = QtCore.Property(QColor, _get_color, _set_color)
 
     def _get_thickness(self):
         return self._line_thickness
@@ -127,103 +103,50 @@ class LinePlot(QWidget):
     
     thickness = QtCore.Property(float, _get_thickness, _set_thickness)
     
+    @property
+    def plot_type(self):
+        return self._plot_type
+
+    @plot_type.setter
+    def plot_type(self, value):
+        self._plot_type = value
+        for action in self._line_type_group.actions():
+            data = action.data()
+            if data == self._plot_type.__class__:
+                action.setChecked(True)
+
+    def sample(self):
+        return self.plot_type.sample()
+    
     def saveState(self, settings):
         settings.beginGroup(str(self.objectName()))
         
         settings.setValue('visible', self.visible)
         settings.setValue('color', self.color)
-        settings.setValue('line_style', self._line_style)
+        settings.setValue('plot_type_name', self.plot_type.type_name())
+        
+        self.plot_type.saveState(settings)
         
         settings.endGroup()
 
     
     def restoreState(self, settings):
+        
         settings.beginGroup(str(self.objectName()))
 
         self.visible = settings.value('visible', self.visible)
         self.color = settings.value('color', self.color)
-        self._line_style = settings.value('line_style', self._line_style)
+        
+        plot_type_name = settings.value('plot_type_name', self.plot_type.type_name())
+        
+        if plot_type_name in self._plot_types:
+            self.plot_type = self._plot_types[plot_type_name]
+        else:
+            self.plot_type = LineTypeStore.plot_types[plot_type_name](self)
+        
+        self.plot_type.restoreState(settings)
         
         settings.endGroup()
-    
-    def _init_line_style(self, line_style):
-        
-        self._line_style = line_style
-        
-        self._line_styles = {'solid': None,
-                             'long dash': 0x00FF,
-                             'short dash': 0xAAAA,
-                             'dot': 0x1111,
-                             }
-        
-
-        style_menu = QMenu("Line Style")
-        
-        self._style_actions = [SAction("solid", self, 'solid'),
-                               SAction("long dash", self, 'long dash'),
-                               SAction("short dash", self, 'short dash'),
-                               SAction("dot", self, 'dot'),
-                               SAction("Other ...", self, None)]
-        
-        
-        self._menus['style'] = style_menu
-        
-        for action in self._style_actions:
-            
-            if action is self._color_actions[-1]:
-                style_menu.addSeparator()
-                
-            style_menu.addAction(action)
-            action.setCheckable(True)
-            action.triggered_data.connect(self.change_line_style)
-        
-        self.change_line_style(style=line_style)
-        
-        
-    @QtCore.Slot(object)
-    def change_line_style(self, style):
-        
-        if style is None:
-            print "Not implemented yet"
-            pass
-#            color = QColorDialog.getColor(QtCore.Qt.green)
-#            print color
-        
-        have_color = False
-        for action in self._style_actions:
-            action.setChecked(False)
-            if action.data == style:
-                action.setChecked(True)
-                have_color = True
-                
-        if not have_color:
-            other = self._style_actions[-1]
-            other.setChecked(True)
-            
-        self._line_style = style
-        
-        self.changed.emit(self)
-    
-    @QtCore.Slot(object)
-    def change_color(self, color):
-        
-        if color is None:
-            color = QColorDialog.getColor(QtCore.Qt.green)
-            print color
-        
-        have_color = False
-        for action in self._color_actions:
-            action.setChecked(False)
-            if action.data == color:
-                action.setChecked(True)
-                have_color = True
-                
-        if not have_color:
-            other = self._color_actions[-1]
-            other.setChecked(True)
-            
-        
-        self.color = color
     
     @property
     def visible(self):
@@ -281,28 +204,7 @@ class LinePlot(QWidget):
 
     def draw(self):
         if self.visible:
-            with client_state(GL.GL_VERTEX_ARRAY), self.vtx_array:
-                
-                with gl_disable(GL.GL_DEPTH_TEST), gl_enable(GL.GL_BLEND), gl_enable(GL.GL_LINE_SMOOTH):
-                    GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
-
-                    GL.glColor(self.color.red(), self.color.green(), self.color.blue(), self.color.alpha())
-                    
-                    line_width = self.thickness if self.state == 'normal' else self.thickness * 3.5
-                    GL.glLineWidth(line_width)
-                    
-                    if self.stipple_pattern is not None:
-                        GL.glEnable(GL.GL_LINE_STIPPLE)
-                        GL.glLineStipple(1, self.stipple_pattern)
-                        
-                    GL.glDrawArrays(GL.GL_LINE_STRIP, 0, self.size)
-                    
-                    if self.stipple_pattern is not None:
-                        GL.glDisable(GL.GL_LINE_STIPPLE)
-            
-    @property
-    def stipple_pattern(self):
-        return self._line_styles[self._line_style]
+            self.plot_type.draw(self.vtx_array)
         
     def over(self, value):
         if self._state == value:
@@ -318,9 +220,28 @@ class LinePlot(QWidget):
 
     @property
     def menus(self):
-        return self._menus.values()
+        for menu in self._menus.values():
+            yield menu
+        for menu in self.plot_type._menus.values():
+            yield menu
     
+    def _get_line_style(self):
+        import pdb;pdb.set_trace()
         
+    def _set_line_style(self, style):
+        import pdb;pdb.set_trace()
+        
+        self._line_style = style
+        
+        for action in self._style_action_group.actions():
+            if action.data() == style:
+                action.setChecked(True)
+                break
+        else:
+            self._style_actions[-1][0].setChecked(True)
+
+    line_style = Property(str, _get_line_style, _set_line_style)
+
 class VertexArray(object):
     '''
     Wrapper around an openGL VBO. 
@@ -351,6 +272,9 @@ class VertexArray(object):
         self.qvbo.release()
         pass
 
+    @property
+    def size(self):
+        return self.qvbo.size() // (2 * 4)
     @property
     def cl_buffer(self):
 

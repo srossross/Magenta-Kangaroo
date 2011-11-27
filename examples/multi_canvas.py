@@ -132,6 +132,9 @@ def main(args):
     plot_widget.add_canvas(image_canvas)
     plot_widget.add_canvas(scene)
     
+    busy_canvas = Canvas(plot_widget, name='Busy Working', start_busy=True)
+    plot_widget.add_canvas(busy_canvas)
+    
     plot_on_canvas(canvas)
     
     settings = QtCore.QSettings("Enthought", "multi_canvas")
@@ -163,14 +166,17 @@ def main(args):
     
     
     app.setStyleSheet("""
+    PlotWidget {
+        font : Helvetica;
+        font-size : 24px;
+        color : white;
+    }
     Canvas {
         background : white;
     }
     
     LinePlot#Plot1 {
         color : white;
-        qproperty-line_style: dot;
-        qproperty-thickness: 1;
     } 
     """)
 
@@ -185,6 +191,7 @@ def main(args):
 
     settings.setValue('window_state', main.saveState())
     settings.setValue('window_geom', main.saveGeometry())
+    
     plot_widget.saveState(settings)
     
     print 'settings.fileName', settings.fileName()

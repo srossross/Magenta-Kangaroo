@@ -10,7 +10,7 @@ from PySide import QtCore, QtGui
 from PySide.QtCore import Qt, QEvent
 from PySide.QtGui import QMenu, QAction, QColor, QColorDialog, QPalette
 from PySide.QtGui import QWidget
-from maka.util import matrix, gl_begin, gl_disable, gl_enable, SAction
+from maka.util import matrix, gl_begin, gl_disable, gl_enable
 import numpy as np
 import os
 from maka.tools.controllers import PanControl, SelectionControl, ZoomControl
@@ -73,6 +73,8 @@ class Scene(CanvasBase):
         
         self._init_controllers([])
         
+        self._init_tools([])
+        
     def saveState(self, settings):
         '''
         Save this canvases state. 
@@ -116,7 +118,7 @@ class Scene(CanvasBase):
 
         self.update_render_target(w, h)
         
-    def paintGL(self):
+    def paintGL(self, painter):
         '''
         Draw the current scene to OpenGL
         '''
@@ -141,17 +143,17 @@ class Scene(CanvasBase):
         
         return False
     
-    def mousePressEvent(self, event):
-        
-        self.controller._mousePressEvent(self, event)
-            
-    def mouseReleaseEvent(self, event):
-        
-        self.controller._mouseReleaseEvent(self, event)
-    
-    def mouseMoveEvent(self, event):
-        
-        self.controller._mouseMoveEvent(self, event)
+#    def mousePressEvent(self, event):
+#        
+#        self.controller._mousePressEvent(self, event)
+#            
+#    def mouseReleaseEvent(self, event):
+#        
+#        self.controller._mouseReleaseEvent(self, event)
+#    
+#    def mouseMoveEvent(self, event):
+#        
+#        self.controller._mouseMoveEvent(self, event)
         
     def _ctx_parent(self, event, menu):
         '''

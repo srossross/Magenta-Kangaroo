@@ -285,7 +285,7 @@ class Widget(QGLWidget):
         x = (self.width() - self.progress.width()) / 2
         y = (self.height() - self.progress.height()) / 2
         
-        self.progress.render(painter, QPoint(x, y), QRegion(self.progress.rect()), rf)
+        self.progress.render(painter, QPoint(x, y), QRegion(bar.rect()), rf)
         
         rect = QRectF(self.rect())
         rect.adjust(self.perc - 1, self.perc - 1,
