@@ -4,9 +4,10 @@ Created on Jul 24, 2011
 @author: sean
 '''
 
-import pyopencl as cl #@UnresolvedImport
+import opencl as cl
 from maka.cl_pipe import ComputationalPipe
 import numpy as np
+from ctypes import c_float
 
 COLORMAPS = dict(
     gray={'blue': [[0.0, 0, 0], [1.0, 1, 1]],
@@ -97,7 +98,17 @@ class ColorMap(ComputationalPipe):
         self.cl_data = cl_data
         self.cl_image = cl_image
 
-        kernel = cl.Program(cl_context, self.src).build().colormap
+        program = cl.Program(cl_context, self.src)
+        program.build()
+        kernel = program.kernel('colormap')
+        
+        '__global const float* data, __global uchar4* image,  __global const float4* red_map,  __global const float4* green_map,  __global const float4* blue_map, float ulimit_lower, float ulimit_upper'
+        gimg = cl.global_memory('(4)b')
+        gfloat4 = cl.global_memory('(4)f')
+        gfloat = cl.global_memory('f')
+        
+        kernel.argnames = 'data', 'image', 'red_map', 'green_map', 'blue_map', 'ulimit_lower', 'ulimit_upper'
+        kernel.argtypes = gfloat, gimg, gfloat4, gfloat4, gfloat4, c_float, c_float
 
 
         self._cdict = cdict
@@ -125,11 +136,13 @@ class ColorMap(ComputationalPipe):
 
         data = np.array([list(item) + [0] for item in cmap], dtype=np.float32)
         data[-1, -1] = 1
-        cl_map = cl.Buffer(cl_context, cl.mem_flags.READ_WRITE, data.nbytes)
-
-        queue = cl.CommandQueue(cl_context)
-        cl.enqueue_copy(queue, cl_map, data)
-        queue.finish()
+        
+        cl_map = cl.DeviceMemoryView.from_host(cl_context, data.view('b'))
+#        cl_map = cl.empty(cl_context, [data.nbytes], 'b')
+#
+#        queue = cl.Queue(cl_context)
+#        cl.enqueue_copy(queue, cl_map, data)
+#        queue.finish()
 
         return cl_map
 

@@ -10,8 +10,6 @@ from PySide.QtCore import QEasingCurve, QEvent, Slot
 from PySide.QtGui import QPolygonF, QPainterPath, QBrush, QPen, QFont, QFontMetricsF, QAction
 from PySide.QtGui import QMenu
 
-from maka.util import gl_attributes, gl_push_all
-
 class Axes(QObject):
     
     def __init__(self, parent=None, title="This is the Title"):
@@ -211,23 +209,7 @@ class Axes(QObject):
         painter.setPen(pen)
         
         painter.drawLine(margin, margin, margin, height - margin) #Vertical
-#        painter.drawLine(0, height, margin, height - margin) #Diag
-        
         painter.restore()
-        #=======================================================================
-        # 
-        #=======================================================================
-#        painter.save()
-#        
-#        grad_left = QLinearGradient(QPointF(0, 0), QPointF(5, 0))
-#        grad_left.setColorAt(0, QColor(0, 0, 0, 90))
-#        grad_left.setColorAt(1, QColor(0, 0, 0, 0))
-#
-#        painter.fillRect(QRect(0, margin, margin, height - margin * 2), grad_left)
-#        painter.fillPath(bottom_tri, QBrush(grad_left))
-#        painter.fillPath(top_tri, QBrush(grad_left))
-#
-#        painter.restore()
         
     def draw_bottom_axis(self, painter):
         
@@ -276,23 +258,7 @@ class Axes(QObject):
         painter.setPen(pen)
         
         painter.drawLine(margin, height - margin, width - margin, height - margin) #Horozontal
-#        painter.drawLine(0, height, margin, height - margin) #Diag
-        
         painter.restore()
-        #=======================================================================
-        # 
-        #=======================================================================
-#        painter.save()
-#        
-#        grad_x = QLinearGradient(QPointF(0, height - 5), QPointF(0, height))
-#        grad_x.setColorAt(1, QColor(0, 0, 0, 90))
-#        grad_x.setColorAt(0, QColor(0, 0, 0, 0))
-#
-#        painter.fillRect(QRect(margin, height - margin, width - margin * 2, margin), grad_x)
-#        painter.fillPath(left_tri, QBrush(grad_x))
-#        painter.fillPath(right_tri, QBrush(grad_x))
-#        
-#        painter.restore()
         
 
     def draw_axes(self, painter):

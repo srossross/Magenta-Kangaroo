@@ -10,9 +10,9 @@ from PySide.QtGui import QActionGroup, QAction, QMenu, QColor, QColorDialog
 from PySide.QtGui import QWidget, QPalette, QWhatsThis, QCursor
 from PySide.QtOpenGL import QGLBuffer
 from OpenGL import GL
-import pyopencl as cl #@UnresolvedImport
+import opencl as cl
+import clyther as cly
 from contextlib import contextmanager
-from maka.util import acquire_gl_objects
 from maka.plot.line_types import LineType, LineTypeStore
 
 
@@ -21,33 +21,20 @@ class LinePlot(QWidget):
     A basic line plot. 
     '''
 
-
-    def __init__(self, gl_context, cl_context, size, color=QColor(0, 0, 0), name=None,
-                 thickness=1, plot_type=None, parent=None):
+    def __init__(self, data, color='black', name=None,
+                 thickness=1, plot_type=None, parent=None, clarray=None):
         QWidget.__init__(self, parent=parent)
 
         if plot_type is None:
             plot_type = LineType(self)
         self._plot_type = plot_type
         self._plot_types = {type(plot_type):plot_type}
-            
-        self._size = size
 
         if name: self.setObjectName(name)
 
-        self.gl_context = gl_context
-        self.cl_context = cl_context
+        self.vtx_array = data
 
-        self.qvbo = QGLBuffer(QGLBuffer.VertexBuffer)
-        self.qvbo.create()
-        self.qvbo.bind()
-        self.qvbo.setUsagePattern(QGLBuffer.StaticDraw)
-        self.qvbo.allocate(self.size * 2 * 4)
-        self.qvbo.release()
-
-        self.vtx_array = VertexArray(self.cl_context, self.qvbo)
-
-        self.queue = cl.CommandQueue(self.cl_context)
+        self.queue = cl.Queue(data.context)
 
         self._pipe_segments = []
         
@@ -70,6 +57,12 @@ class LinePlot(QWidget):
         
         self._line_thickness = thickness
         
+        self.color = color
+    
+    @property
+    def gl_context(self):
+        return self.parent().parent().context()
+    
     @QtCore.Slot(QObject)
     def change_plot_type(self, action):
         ptype = action.data()
@@ -184,7 +177,7 @@ class LinePlot(QWidget):
 
     @property
     def size(self):
-        return self._size
+        return self.vtx_array.size
 
     @contextmanager
     def glctx(self):
@@ -194,9 +187,9 @@ class LinePlot(QWidget):
 
     def process(self):
 
-        clbuffer1 = self.vtx_array.cl_buffer
+        clbuffer1 = self.vtx_array
 
-        with acquire_gl_objects(self.queue, [clbuffer1]):
+        with cl.gl.acquire(self.queue, [clbuffer1]):
             for segment in self._pipe_segments:
                 segment.compute(self.queue)
 
@@ -242,45 +235,44 @@ class LinePlot(QWidget):
 
     line_style = Property(str, _get_line_style, _set_line_style)
 
-class VertexArray(object):
-    '''
-    Wrapper around an openGL VBO. 
-    
-    :param ctx: openCL context 
-    :param vbo: openGL vbo id
-     
-    use::
-        
-        vbo = VertexArray(ctx, )
-        
-        with vbo:
-            ...
-        
-            
-    '''
-    def __init__(self, ctx, qvbo):
-        self.qvbo = qvbo
-        self.ctx = ctx
-        self._cl_buffer = None
-
-    def __enter__(self):
-        self.qvbo.bind()
-#        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.vbo)
-        GL.glVertexPointer(2, GL.GL_FLOAT, 0, None)
-
-    def __exit__(self, *args):
-        self.qvbo.release()
-        pass
-
-    @property
-    def size(self):
-        return self.qvbo.size() // (2 * 4)
-    @property
-    def cl_buffer(self):
-
-        if self._cl_buffer is None:
-            with self:
-                self._cl_buffer = cl.GLBuffer(self.ctx, cl.mem_flags.READ_WRITE, int(self.qvbo.bufferId()))
-
-        return self._cl_buffer
-
+#class VertexArray(object):
+#    '''
+#    Wrapper around an openGL VBO. 
+#    
+#    :param ctx: openCL context 
+#    :param vbo: openGL vbo id
+#     
+#    use::
+#        
+#        vbo = VertexArray(ctx, )
+#        
+#        with vbo:
+#            ...
+#        
+#            
+#    '''
+#    def __init__(self, ctx, qvbo):
+#        self.qvbo = qvbo
+#        self.ctx = ctx
+#        self._cl_buffer = None
+#
+#    def __enter__(self):
+#        self.qvbo.bind()
+##        GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.vbo)
+#        GL.glVertexPointer(2, GL.GL_FLOAT, 0, None)
+#
+#    def __exit__(self, *args):
+#        self.qvbo.release()
+#        pass
+#
+#    @property
+#    def size(self):
+#        return self.qvbo.size() // (2 * 4)
+#    @property
+#    def cl_buffer(self):
+#
+#        if self._cl_buffer is None:
+#            with self:
+#                self._cl_buffer = cl.GLBuffer(self.ctx, cl.mem_flags.READ_WRITE, int(self.qvbo.bufferId()))
+#
+#        return self._cl_buffer

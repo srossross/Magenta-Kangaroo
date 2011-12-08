@@ -10,9 +10,8 @@ from PySide.QtGui import QPixmap, QFont, QFontMetrics, QAction, QMenu, QInputDia
 from PySide.QtCore import Qt, QPropertyAnimation, QSequentialAnimationGroup, QPoint, QPointF, QEvent
 from OpenGL import GL, GLU
 from maka.canvas import Canvas
-from pyopencl.tools import get_gl_sharing_context_properties #@UnresolvedImport
 import numpy as np
-import pyopencl as cl #@UnresolvedImport
+import opencl as cl
 from maka.util import gl_begin, matrix, gl_enable, gl_disable, gl_push_all
 from contextlib import contextmanager
 
@@ -732,7 +731,7 @@ class PlotWidget(QtOpenGL.QGLWidget):
         if self._cl_context is None:
             gl_context = self.context()
             gl_context.makeCurrent()
-            self._cl_context = cl.Context(properties=get_gl_sharing_context_properties(), devices=[])
+            self._cl_context = cl.gl.context()
             
         return self._cl_context
 

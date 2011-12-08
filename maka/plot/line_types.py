@@ -3,7 +3,7 @@ Created on Nov 25, 2011
 
 @author: sean
 '''
-
+import opencl as cl
 from PySide.QtCore import Slot, Property, QObject, Qt
 from PySide.QtGui import QMenu, QAction, QActionGroup, QPixmap, QPainter, QIcon
 from PySide.QtGui import QWidgetAction, QLineEdit, QSlider, QWidget, QVBoxLayout, QIntValidator
@@ -12,8 +12,20 @@ from PySide.QtGui import QColor, QColorDialog, QPen
 from maka.util import client_state, gl_disable, gl_enable, \
     gl_attributes
 from OpenGL import GL
+from contextlib import contextmanager
 
 QObjectType = type(QObject)
+
+@contextmanager
+def bind_array(memobj):
+    vbo = cl.gl.get_gl_name(memobj)
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, vbo)
+    GL.glVertexPointer(2, GL.GL_FLOAT, 0, None)
+    
+    yield
+
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0)
+
 
 class LineTypeStore(object):
 
@@ -221,7 +233,7 @@ class LineType(LinePlotType):
         return pixmap
 
     def draw(self, vtx_array):
-        with client_state(GL.GL_VERTEX_ARRAY), vtx_array:
+        with client_state(GL.GL_VERTEX_ARRAY), bind_array(vtx_array):
             
             with gl_disable(GL.GL_DEPTH_TEST), gl_enable(GL.GL_BLEND), gl_enable(GL.GL_LINE_SMOOTH):
                 
@@ -469,7 +481,7 @@ class ScatterType(LinePlotType):
                 
                 GL.glEnableClientState(GL.GL_VERTEX_ARRAY)
                 
-                with vtx_array:
+                with bind_array(vtx_array):
                     GL.glDrawArrays(GL.GL_POINTS, 0, vtx_array.size)
                     
                 GL.glBindTexture(GL.GL_TEXTURE_2D, 0)

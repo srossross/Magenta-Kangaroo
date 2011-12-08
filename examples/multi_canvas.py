@@ -4,13 +4,14 @@ Created on Oct 19, 2011
 @author: sean
 '''
 
-
+from ctypes import c_float
 import sys
 from PySide import QtCore, QtGui, QtOpenGL
 from PySide.QtCore import Qt
 from PySide.QtGui import QColor, QMainWindow, QMenu, QMenuBar, QWidget, QSlider, QVBoxLayout
 
-from pyopencl import Program, Buffer, mem_flags, enqueue_copy #@UnresolvedImport
+#from pyopencl import Program, Buffer, mem_flags, enqueue_copy #@UnresolvedImport
+import opencl as cl
 import numpy as np
 from maka.plot.line import LinePlot
 from maka.cl_pipe import ComputationalPipe
@@ -20,6 +21,7 @@ from maka.canvas import Canvas
 from maka.image.implot import ImagePlot, Interp
 from maka.image.color_map import ColorMap, COLORMAPS
 from maka.scene import Scene
+import clyther as cly
 
 
 n_vertices = 100
@@ -68,16 +70,16 @@ def create_image_canvas(plot):
 
     implot = ImagePlot(gl_context, cl_context, shape, name='Lena', share=False, interp=Interp.NEAREST)
 
-    cl_data = Buffer(cl_context, mem_flags.READ_WRITE, data.nbytes)
-
+    cl_data = cl.empty(cl_context, [data.nbytes], 'B')
 
     pipe_segment = ColorMap(gl_context, cl_context, COLORMAPS['gray'],
                             cl_data, implot.texture.cl_image,
                             shape, clim=(np.float32(data.min()), np.float32(data.max())))
     
-    enqueue_copy(implot.queue, cl_data, data)
+#    enqueue_copy(implot.queue, cl_data, data)
+    cl_data.write(implot.queue, data)
 
-    implot.queue.finish()
+#    implot.queue.finish()
 
     implot.color_map = pipe_segment
 
@@ -92,16 +94,24 @@ def plot_on_canvas(canvas):
     gl_context = canvas.parent().gl_context
     cl_context = canvas.parent().cl_context
 
-    plot1 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(255, 0, 0), name="Plot1", parent=canvas)
-    plot2 = LinePlot(gl_context, cl_context, n_vertices, color=QColor(0, 200, 50), name="Plot2", parent=canvas)
+    data1 = cl.gl.empty_gl(cl_context, [n_vertices], cly.types.float2)
+    data2 = cl.gl.empty_gl(cl_context, [n_vertices], cly.types.float2)
     
-    generate_sin = Program(cl_context, src).build().generate_sin
+    plot1 = LinePlot(data1, color='red', name="Plot 1", parent=canvas)
+    plot2 = LinePlot(data2, color='green', name="Plot 2", parent=canvas)
+    
+#    generate_sin = Program(cl_context, src).build().generate_sin
+    program = cl.Program(cl_context, src)
+    program.build()
+    generate_sin = program.kernel('generate_sin')
+    generate_sin.argnames = 'a', 'scale'
+    generate_sin.argtypes = cl.global_memory('(2)f'), c_float
 
-    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin, plot1.vtx_array.cl_buffer, np.float32(1.1))
+    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin, plot1.vtx_array, np.float32(1.1))
     plot1.add_pipe_segment(pipe_segment)
     canvas.add_plot(plot1)
 
-    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin, plot2.vtx_array.cl_buffer, np.float32(0.6))
+    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin, plot2.vtx_array, np.float32(0.6))
     plot2.add_pipe_segment(pipe_segment)
     canvas.add_plot(plot2)
 
@@ -113,8 +123,6 @@ def create_3dScene(plot_widget):
 def main(args):
     app = QtGui.QApplication(args)
     
-    
-
     f = QtOpenGL.QGLFormat.defaultFormat()
 
     f.setSampleBuffers(True)

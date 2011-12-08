@@ -5,7 +5,6 @@ Created on Jul 21, 2011
 '''
 from contextlib import contextmanager
 from OpenGL import GL
-import pyopencl as cl #@UnresolvedImport
 import sys
 from PySide import QtCore, QtGui
 
@@ -41,11 +40,6 @@ def gl_attributes():
     GL.glPopAttrib()
 
 @contextmanager
-def acquire_gl_objects(queue, objects):
-    cl.enqueue_acquire_gl_objects(queue, objects)
-    yield None
-    cl.enqueue_release_gl_objects(queue, objects)
-
 def gl_context_mgr(ctx):
     ctx.makeCurrent()
     yield None

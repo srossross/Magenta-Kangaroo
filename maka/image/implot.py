@@ -6,7 +6,7 @@ Created on Jul 23, 2011
 from PySide import QtCore
 from PySide.QtGui import QAction, QActionGroup, QMenu
 from OpenGL import GL
-import pyopencl as cl #@UnresolvedImport
+import opencl as cl #@UnresolvedImport
 import numpy as np
 from maka.util import gl_begin, gl_enable, gl_disable
 from maka.image.color_map import COLORMAPS
@@ -17,22 +17,24 @@ class Texture2D(object):
         self.cl_ctx = cl_ctx
         self.shape = shape
 
-        devices = cl_ctx.get_info(cl.context_info.DEVICES)
+        devices = cl_ctx.devices
         
         device = devices[0]
 
-        self.have_image_support = share and device.get_info(cl.device_info.IMAGE_SUPPORT)
+        self.have_image_support = share and device.has_image_support
 
         if self.have_image_support:
             self._cl_image = cl.GLTexture(cl_ctx, cl.mem_flags.READ_WRITE,
                                           GL.GL_TEXTURE_2D, 0, self.texture, 2)
         else:
 
-            self._cl_image = cl.Buffer(cl_ctx, cl.mem_flags.READ_WRITE, int(np.prod(shape) * 4))
+#            self._cl_image = cl.Buffer(cl_ctx, cl.mem_flags.READ_WRITE, int(np.prod(shape) * 4))
+            self._cl_image = cl.empty(cl_ctx, shape, '(4)B')
             
             if hostbuf is not None:
-                queue = cl.CommandQueue(self.cl_ctx)
-                cl.enqueue_copy(queue, self._cl_image, hostbuf)
+                queue = cl.Queue(self.cl_ctx)
+                self._cl_image.write(queue, hostbuf)
+#                cl.enqueue_copy(queue, self._cl_image, hostbuf)
                 queue.finish()
 
             self._array = np.zeros(shape + [4], dtype=np.uint8)
@@ -49,8 +51,8 @@ class Texture2D(object):
         if self.have_image_support:
             GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA, self.shape[1], self.shape[0], 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
         else:
-            queue = cl.CommandQueue(self.cl_ctx)
-            cl.enqueue_copy(queue, self._array, self._cl_image)
+            queue = cl.Queue(self.cl_ctx)
+            self._cl_image.read(queue, self._array)
             queue.finish()
             
             GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA, self.shape[1], self.shape[0], 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, self._array)
@@ -85,7 +87,7 @@ class ImagePlot(QtCore.QObject):
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, interp)
 
 
-        self.queue = cl.CommandQueue(self.cl_context)
+        self.queue = cl.Queue(self.cl_context)
 
         self._pipe_segments = []
     

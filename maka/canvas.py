@@ -151,8 +151,8 @@ class Canvas(CanvasBase):
         
         self._init_controllers(controllers, 'pan')
         
-        self._init_tools([Axes(self, title=name), Legend(self)])
-#        self._init_tools([])
+#        self._init_tools([Axes(self, title=name), Legend(self)])
+        self._init_tools([])
         
     def saveState(self, settings):
         '''

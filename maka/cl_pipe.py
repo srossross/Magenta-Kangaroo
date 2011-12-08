@@ -25,5 +25,5 @@ class ComputationalPipe(QtCore.QObject):
         self.changed.emit(self)
 
     def compute(self, queue):
-        self.kernel(queue, self.global_size, self.local_size, *self.kernel_args)
+        self.kernel(queue, *self.kernel_args, global_work_size=self.global_size, local_work_size=self.local_size)
 
