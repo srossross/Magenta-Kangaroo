@@ -21,7 +21,7 @@ class LinePlot(QWidget):
     A basic line plot. 
     '''
 
-    def __init__(self, data, color='black', name=None,
+    def __init__(self, data, rqueue=None, color='black', name=None,
                  thickness=1, plot_type=None, parent=None, clarray=None):
         QWidget.__init__(self, parent=parent)
 
@@ -36,7 +36,7 @@ class LinePlot(QWidget):
 
         self.queue = cl.Queue(data.context)
 
-        self._pipe_segments = []
+        self._rqueue = rqueue
         
         self._state = "normal"
         
@@ -190,8 +190,9 @@ class LinePlot(QWidget):
         clbuffer1 = self.vtx_array
 
         with cl.gl.acquire(self.queue, [clbuffer1]):
-            for segment in self._pipe_segments:
-                segment.compute(self.queue)
+            pass
+#            for segment in self._pipe_segments:
+#                segment.compute(self.queue)
 
         return self.queue
 

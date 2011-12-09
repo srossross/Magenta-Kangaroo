@@ -19,6 +19,7 @@ from maka.plot_widget import PlotWidget
 from maka.canvas import Canvas
 import clyther as cly
 import clyther.runtime as clrt
+from clyther.queue_record import QueueRecord
 
 n_vertices = 100
 
@@ -39,19 +40,28 @@ def plot_on_canvas(canvas):
     cl_context = canvas.parent().cl_context
 
     data1 = cl.gl.empty_gl(cl_context, [n_vertices], cly.types.float2)
+    
+    rqueue = QueueRecord(cl_context)
+    generate_sin(rqueue, data1, scale=c_float(1.1))
+    
+    plot1 = LinePlot(data1, rqueue, color='red', name="Plot 1", parent=canvas)
+    
     data2 = cl.gl.empty_gl(cl_context, [n_vertices], cly.types.float2)
-    
-    plot1 = LinePlot(data1, color='red', name="Plot 1", parent=canvas)
-    plot2 = LinePlot(data2, color='green', name="Plot 2", parent=canvas)
-    
-    generate_sin_kernel = generate_sin.compile(cl_context, a=cl.global_memory('(2)f'), scale=c_float)
 
-    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin_kernel, plot1.vtx_array, 1.1)
-    plot1.add_pipe_segment(pipe_segment)
+    rqueue = QueueRecord(cl_context)
+    generate_sin(rqueue, data2, scale=c_float(.6))
+    
+    plot2 = LinePlot(data2, rqueue, color='green', name="Plot 2", parent=canvas)
+    
+#    generate_sin_kernel = generate_sin.compile(cl_context, a=cl.global_memory('(2)f'), scale=c_float)
+    
+    
     canvas.add_plot(plot1)
 
-    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin_kernel, plot2.vtx_array, 0.6)
-    plot2.add_pipe_segment(pipe_segment)
+#    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin_kernel, plot1.vtx_array, 1.1)
+#    plot1.add_pipe_segment(pipe_segment)
+#    pipe_segment = ComputationalPipe(gl_context, cl_context, (n_vertices,), None, generate_sin_kernel, plot2.vtx_array, 0.6)
+#    plot2.add_pipe_segment(pipe_segment)
     canvas.add_plot(plot2)
 
 
